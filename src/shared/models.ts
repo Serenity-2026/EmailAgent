@@ -135,13 +135,11 @@ export interface AgentProgress {
 }
 
 export interface DesktopApi {
-  getSession(): Promise<{ username: string | null; needsReset: boolean }>
-  login(username: string, password: string): Promise<{ username: string; needsReset: boolean }>
+  getSession(): Promise<{ username: string | null }>
+  login(username: string, password: string): Promise<{ username: string }>
   logout(): Promise<void>
   createUser(username: string, password: string): Promise<void>
   changePassword(currentPassword: string, nextPassword: string): Promise<void>
-  retryStorage(): Promise<{ needsReset: boolean }>
-  resetStorage(): Promise<string>
   listAccounts(): Promise<Account[]>
   addAccount(input: AccountInput): Promise<Account>
   removeAccount(id: string): Promise<void>

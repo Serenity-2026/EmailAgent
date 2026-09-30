@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentAction, AgentMailRef } from '../shared/models'
-import type { StoredAccount } from './store'
+import type { StoredAccount } from '../shared/vault'
 
 const state = vi.hoisted(() => ({
   uidValidity: 55n, archive: false, exists: true, calls: [] as string[], searchCount: 0, connectionError: false

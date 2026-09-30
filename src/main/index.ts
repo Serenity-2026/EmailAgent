@@ -1,319 +1,63 @@
-import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell } from 'electron'
-import type {
-  AccountInput, AgentConfirmResult, AgentConversation, AgentMessage, AiSettingsInput, DailyDigest, MailDraft, ThemeMode
-} from '../shared/models'
-import { generateDigest as summarize, generateDraft, listAiModels, resolveAiKey, testAiConnection, validateAiSettings } from './ai'
-import { runAgentTask } from './agent'
-import { AgentProposalRegistry, executeConfirmedActions } from './agent-proposals'
-import { getMailOverview } from './mail-overview'
-import { executeAgentAction, getMail, getSentFolder, listMail, sendMail, testAccount, todayMail } from './mail'
-import { validateAccount } from './providers'
-import { Store, type StoredAccount } from './store'
+import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
+import { API_CHANNELS } from '../shared/api'
+import { BackendClient } from './backend-client'
+import type { ThemeMode } from '../shared/models'
 
 let window: BrowserWindow | null = null
-let store: Store
-let dailyAttempt = ''
-let initialized = false
-let runningAgentVersion: number | null = null
-const agentProposals = new AgentProposalRegistry()
+let client: BackendClient
 const ownsInstance = app.requestSingleInstanceLock()
-
 if (!ownsInstance) app.quit()
-app.on('second-instance', () => {
-  if (!window || window.isDestroyed()) return
-  if (window.isMinimized()) window.restore()
-  window.focus()
-})
 
-function accountById(id: string): StoredAccount {
-  const account = store.accounts.find((item) => item.id === id)
-  if (!account) throw new Error('邮箱账户不存在')
-  return account
-}
-
-function requireSession(version: number): void {
-  if (store.sessionVersion !== version || !store.activeUsername) throw new Error('登录状态已变化，请重试')
-}
-
-function todayStart(): Date {
-  const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate())
-}
-
-function localDate(): string {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-}
-
-async function digestFor(accountIds: string[]): Promise<DailyDigest> {
-  const version = store.sessionVersion
-  const settings = store.ai
-  const selected = accountIds.map(accountById)
-  if (selected.length === 0) throw new Error('请先添加邮箱账户')
-  const mail = (await Promise.all(selected.map((account) => todayMail(account, todayStart()))))
-    .flat().sort((a, b) => a.date.localeCompare(b.date))
-  requireSession(version)
-  const digest = await summarize(settings, localDate(), mail)
-  requireSession(version)
-  return digest
-}
-
-function registerIpc(): void {
-  ipcMain.handle('auth:session', () => ({ username: store.activeUsername, needsReset: store.needsReset }))
-  ipcMain.handle('auth:login', async (_event, username: string, password: string) => {
-    const result = await store.login(username, password)
-    nativeTheme.themeSource = result.needsReset ? 'system' : store.themeMode
-    return result
-  })
-  ipcMain.handle('auth:logout', async () => {
-    await store.forgetSession()
-    store.logout()
-    agentProposals.clear()
-    nativeTheme.themeSource = 'system'
-  })
-  ipcMain.handle('auth:create', (_event, username: string, password: string) => store.addUser(username, password))
-  ipcMain.handle('auth:password', (_event, currentPassword: string, nextPassword: string) =>
-    store.changePassword(currentPassword, nextPassword))
-  ipcMain.handle('storage:retry', async () => {
-    return { needsReset: await store.retryUnreadable() }
-  })
-  ipcMain.handle('storage:reset', () => store.resetUnreadable())
-  ipcMain.handle('accounts:list', () => store.accounts.map(({ authorizationCode: _code, ...account }) => account))
-  ipcMain.handle('accounts:add', async (_event, input: AccountInput) => {
-    const version = store.sessionVersion
-    validateAccount(input)
-    if (store.accounts.some((account) => account.address.toLowerCase() === input.address.trim().toLowerCase())) {
-      throw new Error('这个邮箱已经添加')
-    }
-    const account: StoredAccount = {
-      id: randomUUID(),
-      provider: input.provider,
-      address: input.address.trim().toLowerCase(),
-      authorizationCode: input.authorizationCode.trim()
-    }
-    try {
-      await testAccount(account)
-    } catch {
-      throw new Error('连接失败，请检查 IMAP/SMTP 是否开启及授权码是否正确')
-    }
-    requireSession(version)
-    await store.setAccounts([...store.accounts, account])
-    const { authorizationCode: _code, ...view } = account
-    return view
-  })
-  ipcMain.handle('accounts:remove', async (_event, id: string) => {
-    accountById(id)
-    await store.setAccounts(store.accounts.filter((account) => account.id !== id))
-  })
-  ipcMain.handle('mail:list', async (_event, accountId: string, folder: string) => {
-    const version = store.sessionVersion
-    const result = await listMail(accountById(accountId), folder)
-    requireSession(version)
-    return result
-  })
-  ipcMain.handle('mail:get', async (_event, accountId: string, folder: string, uid: number, markRead = true) => {
-    if (typeof markRead !== 'boolean') throw new Error('阅读选项无效')
-    const version = store.sessionVersion
-    const result = await getMail(accountById(accountId), folder, uid, markRead)
-    requireSession(version)
-    return result
-  })
-  ipcMain.handle('mail:open-link', async (event, value: string) => {
-    if (!store.activeUsername) throw new Error('请先登录')
-    if (event.senderFrame !== window?.webContents.mainFrame || typeof value !== 'string') throw new Error('链接无效')
-    const url = new URL(value)
-    if (url.protocol !== 'https:' || !url.hostname || url.username || url.password) throw new Error('仅支持打开 HTTPS 链接')
-    await shell.openExternal(url.toString())
-  })
-  ipcMain.handle('mail:sent-folder', async (_event, accountId: string) => {
-    const version = store.sessionVersion
-    const result = await getSentFolder(accountById(accountId))
-    requireSession(version)
-    return result
-  })
-  ipcMain.handle('mail:send', (_event, draft: MailDraft) => sendMail(accountById(draft.accountId), draft))
-  ipcMain.handle('ai:settings:get', () => {
-    const { apiKey: _key, ...view } = store.ai
-    return { ...view, hasApiKey: Boolean(store.ai.apiKey) }
-  })
-  ipcMain.handle('ai:models', (_event, baseUrl: string, apiKey: string) =>
-    listAiModels(baseUrl.trim(), resolveAiKey(baseUrl, apiKey, store.ai)))
-  ipcMain.handle('ai:settings:save', async (_event, input: AiSettingsInput) => {
-    const version = store.sessionVersion
-    const settings = {
-      ...input,
-      baseUrl: input.baseUrl.trim().replace(/\/+$/, ''),
-      model: input.model.trim(),
-      apiKey: resolveAiKey(input.baseUrl, input.apiKey, store.ai)
-    }
-    validateAiSettings(settings)
-    await testAiConnection(settings)
-    requireSession(version)
-    await store.setAi(settings)
-  })
-  ipcMain.handle('ai:settings:test', () => testAiConnection(store.ai))
-  ipcMain.handle('ai:draft', async (_event, instruction: string, accountId: string) => {
-    const version = store.sessionVersion
-    accountById(accountId)
-    const draft = await generateDraft(store.ai, instruction, accountId)
-    requireSession(version)
-    return draft
-  })
-  ipcMain.handle('ai:digest', (_event, accountIds: string[]) => digestFor(accountIds))
-  ipcMain.handle('agent:history', () => store.agentConversations)
-  ipcMain.handle('agent:overview', async (event) => {
-    if (event.senderFrame !== window?.webContents.mainFrame) throw new Error('请求来源无效')
-    const version = store.sessionVersion
-    return getMailOverview([...store.accounts], store.ai, () => requireSession(version))
-  })
-  ipcMain.handle('theme:get', () => store.themeMode)
-  ipcMain.handle('theme:set', async (_event, mode: ThemeMode) => {
-    const version = store.sessionVersion
-    await store.setThemeMode(mode)
-    requireSession(version)
-    nativeTheme.themeSource = mode
-  })
-  ipcMain.handle('agent:run', async (event, prompt: string, conversationId?: string) => {
-    if (event.senderFrame !== window?.webContents.mainFrame) throw new Error('请求来源无效')
-    const version = store.sessionVersion
-    if (runningAgentVersion === version) throw new Error('Agent 正在处理上一项任务')
-    const accounts = [...store.accounts]
-    const existing = conversationId ? store.agentConversations.find((item) => item.id === conversationId) : undefined
-    if (conversationId && !existing) throw new Error('对话不存在或已过期')
-    runningAgentVersion = version
-    try {
-      const result = await runAgentTask(store.ai, prompt, accounts, existing, (progress) => {
-        if (store.sessionVersion === version) window?.webContents.send('agent:progress', progress)
-      }, () => requireSession(version))
-      requireSession(version)
-      const createdAt = new Date().toISOString()
-      const id = existing?.id || randomUUID()
-      const messages: AgentMessage[] = [
-        ...(existing?.messages || []),
-        { id: randomUUID(), role: 'user', content: prompt.trim(), createdAt },
-        { id: randomUUID(), role: 'assistant', content: result.answer, createdAt,
-          sources: result.sources, draft: result.draft, scope: result.scope,
-          truncated: result.truncated, warnings: result.warnings }
-      ]
-      const conversation: AgentConversation = { id, updatedAt: createdAt, messages }
-      await store.setAgentConversations([conversation, ...store.agentConversations.filter((item) => item.id !== id)])
-      requireSession(version)
-      const proposal = result.actions.length ? agentProposals.create(version, id, result.actions) : undefined
-      return { conversation, scope: result.scope, truncated: result.truncated, warnings: result.warnings, proposal }
-    } finally {
-      if (runningAgentVersion === version) runningAgentVersion = null
-    }
-  })
-  ipcMain.handle('agent:confirm', async (event, proposalId: string): Promise<AgentConfirmResult> => {
-    if (event.senderFrame !== window?.webContents.mainFrame || typeof proposalId !== 'string') throw new Error('请求来源无效')
-    const version = store.sessionVersion
-    const proposal = agentProposals.take(proposalId, version)
-    requireSession(version)
-    const results = await executeConfirmedActions(proposal.actions,
-      (action) => executeAgentAction(accountById(action.mail.accountId), action),
-      () => requireSession(version))
-    const conversation = store.agentConversations.find((item) => item.id === proposal.conversationId)
-    let historySaved = Boolean(conversation)
-    if (conversation) {
-      const success = results.filter((item) => item.success).length
-      const message: AgentMessage = {
-        id: randomUUID(), role: 'assistant', createdAt: new Date().toISOString(),
-        content: `整理完成：成功 ${success} 项，失败 ${results.length - success} 项。`,
-        sources: results.map((item) => item.mail), actionResults: results
-      }
-      try {
-        await store.setAgentConversations([{ ...conversation, updatedAt: message.createdAt,
-          messages: [...conversation.messages, message] }, ...store.agentConversations.filter((item) => item.id !== conversation.id)])
-      } catch {
-        historySaved = false
-      }
-    }
-    return { results, historySaved }
-  })
-  ipcMain.handle('agent:clear', async () => {
-    if (runningAgentVersion === store.sessionVersion) throw new Error('请等待当前任务完成')
-    await store.setAgentConversations([])
-    agentProposals.clear()
-  })
+function emit(channel: string, payload: unknown): void {
+  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return
+  if (channel === 'auth:expired') { nativeTheme.themeSource = 'system'; window.webContents.reload(); return }
+  try { window.webContents.send(channel, payload) } catch { /* Renderer has closed. */ }
 }
 
 function createWindow(): void {
   window = new BrowserWindow({
-    width: 1240,
-    height: 800,
-    minWidth: 900,
-    minHeight: 600,
-    title: 'EmailAgent',
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true
-    }
+    width: 1240, height: 800, minWidth: 900, minHeight: 600, title: 'EmailAgent',
+    webPreferences: { preload: join(__dirname, '../preload/index.js'), nodeIntegration: false, contextIsolation: true, sandbox: true }
   })
   window.webContents.on('will-navigate', (event) => event.preventDefault())
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  const load = process.env.ELECTRON_RENDERER_URL
-    ? window.loadURL(process.env.ELECTRON_RENDERER_URL)
-    : window.loadFile(join(__dirname, '../renderer/index.html'))
-  void load.catch(() => reportUnexpectedError())
+  window.on('closed', () => { client.stopEvents(); window = null })
+  const load = process.env.ELECTRON_RENDERER_URL ? window.loadURL(process.env.ELECTRON_RENDERER_URL) : window.loadFile(join(__dirname, '../renderer/index.html'))
+  void load.catch(() => emit('app:error', '界面加载失败，请重新启动应用'))
+  client.startEvents()
 }
 
-function reportUnexpectedError(): void {
-  if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-    try {
-      window.webContents.send('app:error', '应用遇到意外错误，请重试当前操作；若持续出现，请重新启动应用。')
-    } catch {
-      // A destroyed renderer cannot display the in-app error.
-    }
+function registerIpc(): void {
+  for (const channel of API_CHANNELS) {
+    ipcMain.handle(channel, async (event, ...args: unknown[]) => {
+      if (event.senderFrame !== window?.webContents.mainFrame) throw new Error('请求来源无效')
+      const result = await client.request(channel, args)
+      if (channel === 'theme:set') nativeTheme.themeSource = args[0] as ThemeMode
+      if (channel === 'theme:get') nativeTheme.themeSource = result as ThemeMode
+      if (channel === 'auth:logout') nativeTheme.themeSource = 'system'
+      return result
+    })
   }
+  ipcMain.handle('mail:open-link', async (event, value: string) => {
+    if (event.senderFrame !== window?.webContents.mainFrame || typeof value !== 'string') throw new Error('链接无效')
+    const session = await client.request<{ username: string | null }>('auth:session')
+    if (!session.username) throw new Error('请先登录')
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || !url.hostname || url.username || url.password) throw new Error('仅支持打开 HTTPS 链接')
+    await shell.openExternal(url.toString())
+  })
 }
 
-process.on('uncaughtException', reportUnexpectedError)
-process.on('unhandledRejection', reportUnexpectedError)
-
-function startDailySchedule(): void {
-  setInterval(async () => {
-    if (!store.activeUsername || store.needsReset) return
-    const settings = store.ai
-    if (!settings.autoDaily || !settings.apiKey || store.accounts.length === 0 || !window || window.isDestroyed()) return
-    const now = new Date()
-    const clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-    const date = localDate()
-    if (clock < settings.dailyTime || dailyAttempt === date) return
-    dailyAttempt = date
-    try {
-      const version = store.sessionVersion
-      const digest = await digestFor(store.accounts.map((account) => account.id))
-      if (store.sessionVersion === version) window?.webContents.send('ai:digest:ready', digest)
-    } catch {
-      // Manual generation remains available if the scheduled run fails.
-    }
-  }, 60_000)
-}
-
-if (ownsInstance) app.whenReady().then(async () => {
-  try {
-    store = new Store(app.getPath('userData'))
-    await store.load()
-    await store.restoreSession()
-    if (store.activeUsername) nativeTheme.themeSource = store.themeMode
-    registerIpc()
-    initialized = true
-    createWindow()
-    startDailySchedule()
-  } catch (error) {
-    dialog.showErrorBox('EmailAgent 无法启动', error instanceof Error ? error.message : '未知错误')
-    app.quit()
-  }
+process.on('uncaughtException', () => emit('app:error', '应用遇到意外错误，请重新启动应用'))
+process.on('unhandledRejection', () => emit('app:error', '应用请求失败，请稍后重试'))
+app.on('second-instance', () => { if (window && !window.isDestroyed()) { if (window.isMinimized()) window.restore(); window.focus() } })
+if (ownsInstance) void app.whenReady().then(async () => {
+  client = new BackendClient(app.getPath('userData'), emit)
+  await client.restoreToken()
+  registerIpc()
+  createWindow()
 })
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
-
-app.on('activate', () => {
-  if (ownsInstance && initialized && BrowserWindow.getAllWindows().length === 0) createWindow()
-})
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
+app.on('activate', () => { if (ownsInstance && client && BrowserWindow.getAllWindows().length === 0) createWindow() })
+app.on('before-quit', () => client?.stopEvents())

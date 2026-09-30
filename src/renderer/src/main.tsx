@@ -61,9 +61,8 @@ function EmailApp({ themeMode, setThemeMode, dark }: {
   const [nextPassword, setNextPassword] = useState('')
   const [confirmNextPassword, setConfirmNextPassword] = useState('')
   const [passwordBusy, setPasswordBusy] = useState(false)
-  const [storageStatus, setStorageStatus] = useState<'loading' | 'ready' | 'unreadable' | 'failed'>('loading')
-  const [storageBackup, setStorageBackup] = useState('')
-  const [storageBusy, setStorageBusy] = useState(false)
+  const [connectionStatus, setConnectionStatus] = useState<'loading' | 'ready' | 'failed'>('loading')
+  const [connectionBusy, setConnectionBusy] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
   const [accountBusy, setAccountBusy] = useState(false)
   const [accountForm, setAccountForm] = useState<AccountInput>({ provider: 'qq', address: '', authorizationCode: '' })
@@ -88,24 +87,9 @@ function EmailApp({ themeMode, setThemeMode, dark }: {
   const sessionEpoch = useRef(0)
 
   useEffect(() => {
-    void api.getSession().then(async ({ username, needsReset }) => {
-      setActiveUser(username)
-      if (needsReset) {
-        setStorageStatus('unreadable')
-        return
-      }
-      if (username) {
-        const [items, history, mode] = await Promise.all([api.listAccounts(), api.listAgentConversations(), api.getThemeMode()])
-        setAccounts(items)
-        if (items.length) setAccountId(items[0].id)
-        setAgentConversations(history)
-        setAgentConversationId(history[0]?.id || '')
-        setThemeMode(mode)
-      }
-      setStorageStatus('ready')
-    }).catch((err) => {
+    void loadSession().catch((err) => {
       setError(errorText(err))
-      setStorageStatus('failed')
+      setConnectionStatus('failed')
     })
     const unsubscribe = api.onDailyDigest((result) => {
       setDigest(result)
@@ -147,23 +131,28 @@ function EmailApp({ themeMode, setThemeMode, dark }: {
 
   const activeAccount = accounts.find((account) => account.id === accountId)
 
+  async function loadSession(): Promise<void> {
+    const { username } = await api.getSession()
+    setActiveUser(username)
+    if (username) {
+      const [items, history, mode] = await Promise.all([api.listAccounts(), api.listAgentConversations(), api.getThemeMode()])
+      setAccounts(items)
+      setAccountId(items[0]?.id || '')
+      setAgentConversations(history)
+      setAgentConversationId(history[0]?.id || '')
+      setThemeMode(mode)
+    }
+    setConnectionStatus('ready')
+  }
+
   async function login(): Promise<void> {
     setLoginBusy(true)
     setError('')
     try {
-      const session = await api.login(loginName, loginPassword)
+      await api.login(loginName, loginPassword)
       sessionEpoch.current += 1
-      setActiveUser(session.username)
       setLoginPassword('')
-      setStorageStatus(session.needsReset ? 'unreadable' : 'ready')
-      if (!session.needsReset) {
-        const [items, history, mode] = await Promise.all([api.listAccounts(), api.listAgentConversations(), api.getThemeMode()])
-        setAccounts(items)
-        setAccountId(items[0]?.id || '')
-        setAgentConversations(history)
-        setAgentConversationId(history[0]?.id || '')
-        setThemeMode(mode)
-      }
+      await loadSession()
     } catch (err) {
       setError(errorText(err))
     } finally {
@@ -613,48 +602,26 @@ function EmailApp({ themeMode, setThemeMode, dark }: {
     agentScrollState.current = { view, conversationId: agentConversationId }
   }, [view, agentConversationId, activeConversation?.messages.length, agentStatus])
 
-  async function retryStorage(): Promise<void> {
-    setStorageBusy(true)
+  async function retryConnection(): Promise<void> {
+    setConnectionBusy(true)
     setError('')
     try {
-      const status = await api.retryStorage()
-      if (!status.needsReset) {
-        const items = await api.listAccounts()
-        setAccounts(items)
-        if (items.length) setAccountId(items[0].id)
-        setStorageStatus('ready')
-      }
+      await loadSession()
     } catch (err) {
       setError(errorText(err))
     } finally {
-      setStorageBusy(false)
+      setConnectionBusy(false)
     }
   }
 
-  if (storageStatus === 'loading') return <div className="launch-screen"><Spin /></div>
+  if (connectionStatus === 'loading') return <div className="launch-screen"><Spin /></div>
 
-  if (storageStatus !== 'ready') return <div className="recovery-shell">
+  if (connectionStatus !== 'ready') return <div className="recovery-shell">
     <div className="recovery-card">
       <div className="brand">Email<span>Agent</span></div>
-      <h1>{storageStatus === 'failed' ? '本地配置检查失败' : '本地配置无法读取'}</h1>
-      {storageStatus === 'unreadable' && <p>加密数据未被修改。重建配置时会先备份原文件，之后需要重新输入邮箱授权码和 AI Key。</p>}
+      <h1>无法连接服务</h1>
       {error && <Alert type="error" message={error} style={{ marginBottom: 18 }} />}
-      {storageStatus === 'unreadable' && <div className="recovery-actions"><Button loading={storageBusy} onClick={() => void retryStorage()}>重试读取</Button><Button type="primary" onClick={() => Modal.confirm({
-        title: '备份并重建本地配置？',
-        content: '原加密文件会保留为备份，当前账户与 AI 设置需要重新配置。',
-        okText: '备份并重建', cancelText: '取消',
-        onOk: async () => {
-          try {
-            const backup = await api.resetStorage()
-            setStorageBackup(backup)
-            setError('')
-            setStorageStatus('ready')
-          } catch (err) {
-            setError(errorText(err))
-            throw err
-          }
-        }
-      })}>备份并重建配置</Button></div>}
+      <Button type="primary" loading={connectionBusy} onClick={() => void retryConnection()}>重新连接</Button>
     </div>
   </div>
 
@@ -713,7 +680,6 @@ function EmailApp({ themeMode, setThemeMode, dark }: {
       </header>
 
       {error && <div className="error-wrap"><Alert type="error" message={error} closable onClose={() => setError('')} /></div>}
-      {storageBackup && <div className="error-wrap"><Alert type="success" message="旧加密文件已备份" description={storageBackup} closable onClose={() => setStorageBackup('')} /></div>}
 
       {view === 'agent' ? <section className="agent-layout">
         <div className="agent-history">

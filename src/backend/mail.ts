@@ -3,7 +3,7 @@ import { simpleParser } from 'mailparser'
 import nodemailer from 'nodemailer'
 import type { AgentAction, AgentMailRef, MailDetail, MailDraft, MailSummary } from '../shared/models'
 import { PROVIDERS, validateRecipient } from './providers'
-import type { StoredAccount } from './store'
+import type { StoredAccount } from '../shared/vault'
 
 function clientFor(account: StoredAccount): ImapFlow {
   const client = new ImapFlow({

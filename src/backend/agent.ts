@@ -4,7 +4,7 @@ import type {
 import { complete } from './ai'
 import { readAgentMailBatch, searchAgentMail, type AgentSearchFilters } from './mail'
 import { validateRecipient } from './providers'
-import type { StoredAccount } from './store'
+import type { StoredAccount } from '../shared/vault'
 import type { AiSettingsInput } from '../shared/models'
 
 function jsonObject(raw: string): Record<string, unknown> {

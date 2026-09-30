@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentMailRef } from '../shared/models'
-import type { StoredAccount } from './store'
+import type { StoredAccount } from '../shared/vault'
 
 vi.mock('./ai', () => ({ complete: vi.fn() }))
 vi.mock('./mail', () => ({ searchAgentMail: vi.fn(), readAgentMailBatch: vi.fn() }))

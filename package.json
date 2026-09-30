@@ -10,6 +10,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "preview": "electron-vite preview",
+    "backend:build": "tsc --project tsconfig.backend.json",
+    "backend:start": "node --env-file=.env out/backend/backend/index.js",
+    "backend:migrate": "npm run backend:build && node --env-file=.env out/backend/backend/migrate.js",
+    "services:up": "docker compose up -d --build --wait",
+    "services:down": "docker compose down",
+    "test:backend": "EMAILAGENT_MYSQL_TEST=1 node --env-file=.env node_modules/vitest/vitest.mjs run src/backend/database.integration.test.ts",
     "package:mac": "npm run build && electron-builder --mac dir --publish never --config.electronDist=node_modules/electron/dist"
   },
   "dependencies": {
@@ -18,6 +24,7 @@
     "dompurify": "3.4.15",
     "imapflow": "2.1.2",
     "mailparser": "3.9.32",
+    "mysql2": "3.24.5",
     "nodemailer": "10.0.13",
     "react": "19.2.1",
     "react-dom": "19.2.1"

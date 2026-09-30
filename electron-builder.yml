@@ -3,7 +3,9 @@ productName: EmailAgent
 directories:
   output: release
 files:
-  - out/**/*
+  - out/main/**/*
+  - out/preload/**/*
+  - out/renderer/**/*
   - package.json
 mac:
   target: dir

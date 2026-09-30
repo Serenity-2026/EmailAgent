@@ -1,7 +1,7 @@
 import type { AiSettingsInput, AgentMailRef, MailOverview } from '../shared/models'
 import { complete } from './ai'
 import { readAgentMailBatch, searchAgentMail } from './mail'
-import type { StoredAccount } from './store'
+import type { StoredAccount } from '../shared/vault'
 
 function topPeople(addresses: string[]): { address: string; count: number }[] {
   const counts = new Map<string, number>()
