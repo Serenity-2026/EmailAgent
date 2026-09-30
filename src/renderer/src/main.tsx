@@ -32,6 +32,9 @@ function EmailApp(): React.JSX.Element {
   const [digest, setDigest] = useState<DailyDigest | null>(null)
   const [digestLoading, setDigestLoading] = useState(false)
   const [error, setError] = useState('')
+  const [storageStatus, setStorageStatus] = useState<'loading' | 'ready' | 'unreadable' | 'failed'>('loading')
+  const [storageBackup, setStorageBackup] = useState('')
+  const [storageBusy, setStorageBusy] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
   const [accountBusy, setAccountBusy] = useState(false)
   const [accountForm, setAccountForm] = useState<AccountInput>({ provider: 'qq', address: '', authorizationCode: '' })
@@ -49,10 +52,19 @@ function EmailApp(): React.JSX.Element {
   const pendingSource = useRef<MailSummary | null>(null)
 
   useEffect(() => {
-    void api.listAccounts().then((items) => {
+    void api.getStorageStatus().then(async ({ needsReset }) => {
+      if (needsReset) {
+        setStorageStatus('unreadable')
+        return
+      }
+      const items = await api.listAccounts()
       setAccounts(items)
       if (items.length) setAccountId(items[0].id)
-    }).catch((err) => setError(errorText(err)))
+      setStorageStatus('ready')
+    }).catch((err) => {
+      setError(errorText(err))
+      setStorageStatus('failed')
+    })
     const unsubscribe = api.onDailyDigest((result) => {
       setDigest(result)
       setView('digest')
@@ -238,6 +250,51 @@ function EmailApp(): React.JSX.Element {
     setView('mail')
   }
 
+  async function retryStorage(): Promise<void> {
+    setStorageBusy(true)
+    setError('')
+    try {
+      const status = await api.retryStorage()
+      if (!status.needsReset) {
+        const items = await api.listAccounts()
+        setAccounts(items)
+        if (items.length) setAccountId(items[0].id)
+        setStorageStatus('ready')
+      }
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setStorageBusy(false)
+    }
+  }
+
+  if (storageStatus === 'loading') return <div className="launch-screen"><Spin /></div>
+
+  if (storageStatus !== 'ready') return <div className="recovery-shell">
+    <div className="recovery-card">
+      <div className="brand">Email<span>Agent</span></div>
+      <h1>{storageStatus === 'failed' ? '本地配置检查失败' : '本地配置无法读取'}</h1>
+      {storageStatus === 'unreadable' && <p>加密数据未被修改。重建配置时会先备份原文件，之后需要重新输入邮箱授权码和 AI Key。</p>}
+      {error && <Alert type="error" message={error} style={{ marginBottom: 18 }} />}
+      {storageStatus === 'unreadable' && <div className="recovery-actions"><Button loading={storageBusy} onClick={() => void retryStorage()}>重试读取</Button><Button type="primary" onClick={() => Modal.confirm({
+        title: '备份并重建本地配置？',
+        content: '原加密文件会保留为备份，当前账户与 AI 设置需要重新配置。',
+        okText: '备份并重建', cancelText: '取消',
+        onOk: async () => {
+          try {
+            const backup = await api.resetStorage()
+            setStorageBackup(backup)
+            setError('')
+            setStorageStatus('ready')
+          } catch (err) {
+            setError(errorText(err))
+            throw err
+          }
+        }
+      })}>备份并重建配置</Button></div>}
+    </div>
+  </div>
+
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand">Email<span>Agent</span></div>
@@ -278,6 +335,7 @@ function EmailApp(): React.JSX.Element {
       </header>
 
       {error && <div className="error-wrap"><Alert type="error" message={error} closable onClose={() => setError('')} /></div>}
+      {storageBackup && <div className="error-wrap"><Alert type="success" message="旧加密文件已备份" description={storageBackup} closable onClose={() => setStorageBackup('')} /></div>}
 
       {view === 'digest' ? <section className="digest-view">
         <div className="digest-card">

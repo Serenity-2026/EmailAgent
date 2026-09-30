@@ -57,6 +57,9 @@ export interface DailyDigest {
 }
 
 export interface DesktopApi {
+  getStorageStatus(): Promise<{ needsReset: boolean }>
+  retryStorage(): Promise<{ needsReset: boolean }>
+  resetStorage(): Promise<string>
   listAccounts(): Promise<Account[]>
   addAccount(input: AccountInput): Promise<Account>
   removeAccount(id: string): Promise<void>

@@ -36,6 +36,12 @@ async function digestFor(accountIds: string[]): Promise<DailyDigest> {
 }
 
 function registerIpc(): void {
+  ipcMain.handle('storage:status', () => ({ needsReset: store.needsReset }))
+  ipcMain.handle('storage:retry', async () => {
+    await store.load()
+    return { needsReset: store.needsReset }
+  })
+  ipcMain.handle('storage:reset', () => store.resetUnreadable())
   ipcMain.handle('accounts:list', () => store.accounts.map(({ authorizationCode: _code, ...account }) => account))
   ipcMain.handle('accounts:add', async (_event, input: AccountInput) => {
     validateAccount(input)

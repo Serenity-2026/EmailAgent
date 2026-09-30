@@ -11,6 +11,9 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 }
 
 const api: DesktopApi = {
+  getStorageStatus: () => invoke('storage:status'),
+  retryStorage: () => invoke('storage:retry'),
+  resetStorage: () => invoke('storage:reset'),
   listAccounts: () => invoke('accounts:list'),
   addAccount: (input) => invoke('accounts:add', input),
   removeAccount: (id) => invoke('accounts:remove', id),
