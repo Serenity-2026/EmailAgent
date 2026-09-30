@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest'
-import { parseGeneratedDraft, validateAiSettings } from './ai'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { listAiModels, parseGeneratedDraft, resolveAiKey, validateAiSettings } from './ai'
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('AI input and output boundaries', () => {
   it('rejects non-HTTPS AI endpoints', () => {
@@ -28,5 +30,23 @@ describe('AI input and output boundaries', () => {
     const draft = parseGeneratedDraft('```json\n{"to":"teacher@example.com","subject":"报告","text":"周五提交。"}\n```',
       'account-1', ['teacher@example.com'])
     expect(draft.to).toBe('teacher@example.com')
+  })
+
+  it('loads model choices from the configured provider without saving its key', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ id: 'model-b' }, { id: 'model-a' }] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await listAiModels('https://example.com/v1/', 'test-key')).toEqual(['model-a', 'model-b'])
+    expect(fetchMock).toHaveBeenCalledWith('https://example.com/v1/models', expect.objectContaining({
+      headers: { Authorization: 'Bearer test-key' }
+    }))
+  })
+
+  it('does not reuse a saved API key when the service address changes', () => {
+    const saved = { baseUrl: 'https://first.example/v1', model: 'a', apiKey: 'saved-key', dailyTime: '09:00', autoDaily: false }
+    expect(resolveAiKey('https://first.example/v1/', '', saved)).toBe('saved-key')
+    expect(resolveAiKey('https://second.example/v1', '', saved)).toBe('')
   })
 })

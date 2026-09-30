@@ -1,21 +1,45 @@
 import type { AiSettingsInput, DailyDigest, MailDraft, MailDetail } from '../shared/models'
 import { validateRecipient } from './providers'
 
-export function validateAiSettings(settings: AiSettingsInput): void {
+function validateAiEndpoint(baseUrl: string, apiKey: string): void {
   let url: URL
   try {
-    url = new URL(settings.baseUrl)
+    url = new URL(baseUrl)
   } catch {
     throw new Error('请输入有效的 AI 接口地址')
   }
   if (url.protocol !== 'https:' || url.search || url.hash || url.username || url.password) {
     throw new Error('AI 接口地址必须是 HTTPS 地址，且不能包含账号、参数或片段')
   }
-  if (!settings.model.trim()) throw new Error('请输入模型名称')
-  if (!settings.apiKey.trim()) throw new Error('请输入 AI API Key')
+  if (!apiKey.trim()) throw new Error('请输入 AI API Key')
+}
+
+export function resolveAiKey(baseUrl: string, suppliedKey: string, saved: AiSettingsInput): string {
+  const normalized = baseUrl.trim().replace(/\/+$/, '')
+  return suppliedKey.trim() || (normalized === saved.baseUrl.replace(/\/+$/, '') ? saved.apiKey : '')
+}
+
+export function validateAiSettings(settings: AiSettingsInput): void {
+  validateAiEndpoint(settings.baseUrl, settings.apiKey)
+  if (!settings.model.trim()) throw new Error('请选择 AI 模型')
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(settings.dailyTime)) {
     throw new Error('每日摘要时间格式应为 HH:mm')
   }
+}
+
+export async function listAiModels(baseUrl: string, apiKey: string): Promise<string[]> {
+  validateAiEndpoint(baseUrl, apiKey)
+  const response = await fetch(`${baseUrl.trim().replace(/\/+$/, '')}/models`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    redirect: 'error',
+    signal: AbortSignal.timeout(15_000)
+  })
+  if (!response.ok) throw new Error(`加载模型失败（HTTP ${response.status}）`)
+  const result = await response.json() as { data?: Array<{ id?: unknown }> }
+  const models = result.data?.map((item) => item.id).filter((id): id is string =>
+    typeof id === 'string' && id.trim().length > 0) || []
+  if (models.length === 0) throw new Error('AI 服务未返回可选模型')
+  return [...new Set(models)].sort((a, b) => a.localeCompare(b))
 }
 
 async function complete(settings: AiSettingsInput, system: string, user: string): Promise<string> {

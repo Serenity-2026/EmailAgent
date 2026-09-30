@@ -32,6 +32,20 @@ function EmailApp(): React.JSX.Element {
   const [digest, setDigest] = useState<DailyDigest | null>(null)
   const [digestLoading, setDigestLoading] = useState(false)
   const [error, setError] = useState('')
+  const [activeUser, setActiveUser] = useState<string | null>(null)
+  const [loginName, setLoginName] = useState('dmc')
+  const [loginPassword, setLoginPassword] = useState('')
+  const [loginBusy, setLoginBusy] = useState(false)
+  const [userOpen, setUserOpen] = useState(false)
+  const [newUserName, setNewUserName] = useState('')
+  const [newUserPassword, setNewUserPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [userBusy, setUserBusy] = useState(false)
+  const [passwordOpen, setPasswordOpen] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [nextPassword, setNextPassword] = useState('')
+  const [confirmNextPassword, setConfirmNextPassword] = useState('')
+  const [passwordBusy, setPasswordBusy] = useState(false)
   const [storageStatus, setStorageStatus] = useState<'loading' | 'ready' | 'unreadable' | 'failed'>('loading')
   const [storageBackup, setStorageBackup] = useState('')
   const [storageBusy, setStorageBusy] = useState(false)
@@ -42,6 +56,9 @@ function EmailApp(): React.JSX.Element {
   const [settingsBusy, setSettingsBusy] = useState(false)
   const [settings, setSettings] = useState<AiSettingsInput>({ baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false })
   const [hasAiKey, setHasAiKey] = useState(false)
+  const [availableModels, setAvailableModels] = useState<string[]>([])
+  const [modelsLoading, setModelsLoading] = useState(false)
+  const [settingsNotice, setSettingsNotice] = useState('')
   const [promptOpen, setPromptOpen] = useState(false)
   const [prompt, setPrompt] = useState('')
   const [promptBusy, setPromptBusy] = useState(false)
@@ -50,16 +67,20 @@ function EmailApp(): React.JSX.Element {
   const [composeBusy, setComposeBusy] = useState(false)
   const [draft, setDraft] = useState<MailDraft>(emptyDraft(''))
   const pendingSource = useRef<MailSummary | null>(null)
+  const sessionEpoch = useRef(0)
 
   useEffect(() => {
-    void api.getStorageStatus().then(async ({ needsReset }) => {
+    void api.getSession().then(async ({ username, needsReset }) => {
+      setActiveUser(username)
       if (needsReset) {
         setStorageStatus('unreadable')
         return
       }
-      const items = await api.listAccounts()
-      setAccounts(items)
-      if (items.length) setAccountId(items[0].id)
+      if (username) {
+        const items = await api.listAccounts()
+        setAccounts(items)
+        if (items.length) setAccountId(items[0].id)
+      }
       setStorageStatus('ready')
     }).catch((err) => {
       setError(errorText(err))
@@ -97,38 +118,153 @@ function EmailApp(): React.JSX.Element {
 
   const activeAccount = accounts.find((account) => account.id === accountId)
 
+  async function login(): Promise<void> {
+    setLoginBusy(true)
+    setError('')
+    try {
+      const session = await api.login(loginName, loginPassword)
+      sessionEpoch.current += 1
+      setActiveUser(session.username)
+      setLoginPassword('')
+      setStorageStatus(session.needsReset ? 'unreadable' : 'ready')
+      if (!session.needsReset) {
+        const items = await api.listAccounts()
+        setAccounts(items)
+        setAccountId(items[0]?.id || '')
+      }
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setLoginBusy(false)
+    }
+  }
+
+  async function logout(): Promise<void> {
+    try {
+      await api.logout()
+    } catch (err) {
+      setError(errorText(err))
+      return
+    }
+    sessionEpoch.current += 1
+    setActiveUser(null)
+    setAccounts([])
+    setAccountId('')
+    setAccountBusy(false)
+    setMails([])
+    setSelected(null)
+    setDetail(null)
+    setMailLoading(false)
+    setDetailLoading(false)
+    setDigest(null)
+    setDigestLoading(false)
+    setFolder('INBOX')
+    setView('mail')
+    setSettingsOpen(false)
+    setSettingsBusy(false)
+    setModelsLoading(false)
+    setUserOpen(false)
+    setUserBusy(false)
+    setNewUserName('')
+    setNewUserPassword('')
+    setConfirmPassword('')
+    setPasswordOpen(false)
+    setPasswordBusy(false)
+    setCurrentPassword('')
+    setNextPassword('')
+    setConfirmNextPassword('')
+    setPromptOpen(false)
+    setPromptBusy(false)
+    setPrompt('')
+    setComposeOpen(false)
+    setComposeBusy(false)
+    setDraft(emptyDraft(''))
+    setAccountForm({ provider: 'qq', address: '', authorizationCode: '' })
+    setSettings({ baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false })
+    setHasAiKey(false)
+    setAvailableModels([])
+    pendingSource.current = null
+    setError('')
+  }
+
+  async function createUser(): Promise<void> {
+    if (newUserPassword !== confirmPassword) {
+      setError('两次输入的密码不一致')
+      return
+    }
+    setUserBusy(true)
+    setError('')
+    try {
+      await api.createUser(newUserName, newUserPassword)
+      setUserOpen(false)
+      setNewUserName('')
+      setNewUserPassword('')
+      setConfirmPassword('')
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setUserBusy(false)
+    }
+  }
+
+  async function changePassword(): Promise<void> {
+    if (nextPassword !== confirmNextPassword) {
+      setError('两次输入的新密码不一致')
+      return
+    }
+    setPasswordBusy(true)
+    setError('')
+    try {
+      await api.changePassword(currentPassword, nextPassword)
+      setPasswordOpen(false)
+      setCurrentPassword('')
+      setNextPassword('')
+      setConfirmNextPassword('')
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setPasswordBusy(false)
+    }
+  }
+
   async function openMail(mail: MailSummary): Promise<void> {
+    const epoch = sessionEpoch.current
     setSelected(mail)
     setDetail(null)
     setDetailLoading(true)
     try {
       const result = await api.getMail(mail.accountId, mail.folder, mail.uid)
+      if (epoch !== sessionEpoch.current) return
       setDetail(result)
       setMails((items) => items.map((item) => item.uid === mail.uid ? { ...item, unread: false } : item))
     } catch (err) {
-      setError(errorText(err))
+      if (epoch === sessionEpoch.current) setError(errorText(err))
     } finally {
-      setDetailLoading(false)
+      if (epoch === sessionEpoch.current) setDetailLoading(false)
     }
   }
 
   async function showSent(): Promise<void> {
     if (!accountId) return
+    const epoch = sessionEpoch.current
     try {
       const sent = await api.getSentFolder(accountId)
+      if (epoch !== sessionEpoch.current) return
       if (!sent) throw new Error('邮箱服务商没有提供可识别的已发送文件夹')
       setFolder(sent)
       setView('mail')
     } catch (err) {
-      setError(errorText(err))
+      if (epoch === sessionEpoch.current) setError(errorText(err))
     }
   }
 
   async function addAccount(): Promise<void> {
+    const epoch = sessionEpoch.current
     setAccountBusy(true)
     setError('')
     try {
       const added = await api.addAccount(accountForm)
+      if (epoch !== sessionEpoch.current) return
       setAccounts((items) => [...items, added])
       setAccountId(added.id)
       setFolder('INBOX')
@@ -136,17 +272,19 @@ function EmailApp(): React.JSX.Element {
       setAccountOpen(false)
       setAccountForm({ provider: 'qq', address: '', authorizationCode: '' })
     } catch (err) {
-      setError(errorText(err))
+      if (epoch === sessionEpoch.current) setError(errorText(err))
     } finally {
-      setAccountBusy(false)
+      if (epoch === sessionEpoch.current) setAccountBusy(false)
     }
   }
 
   async function removeAccount(): Promise<void> {
     if (!accountId) return
+    const epoch = sessionEpoch.current
     setError('')
     try {
       await api.removeAccount(accountId)
+      if (epoch !== sessionEpoch.current) return
       const remaining = accounts.filter((account) => account.id !== accountId)
       setAccounts(remaining)
       setAccountId(remaining[0]?.id || '')
@@ -154,36 +292,79 @@ function EmailApp(): React.JSX.Element {
       setMails([])
       setDetail(null)
     } catch (err) {
-      setError(errorText(err))
+      if (epoch === sessionEpoch.current) setError(errorText(err))
     }
   }
 
-  async function openSettings(): Promise<void> {
+  async function openSettings(notice = ''): Promise<void> {
+    const epoch = sessionEpoch.current
     setError('')
     try {
       const current = await api.getAiSettings()
+      if (epoch !== sessionEpoch.current) return
       setSettings({ baseUrl: current.baseUrl, model: current.model, apiKey: '',
         dailyTime: current.dailyTime, autoDaily: current.autoDaily })
       setHasAiKey(current.hasApiKey)
+      setAvailableModels(current.model ? [current.model] : [])
+      setSettingsNotice(notice)
       setSettingsOpen(true)
     } catch (err) {
-      setError(errorText(err))
+      if (epoch === sessionEpoch.current) setError(errorText(err))
     }
   }
 
   async function saveSettings(): Promise<void> {
+    const epoch = sessionEpoch.current
     setSettingsBusy(true)
     setError('')
     try {
       await api.saveAiSettings(settings)
+      if (epoch !== sessionEpoch.current) return
       setHasAiKey(true)
-      await api.testAiConnection()
       setSettingsOpen(false)
     } catch (err) {
-      setError(errorText(err))
+      if (epoch === sessionEpoch.current) setError(errorText(err))
     } finally {
-      setSettingsBusy(false)
+      if (epoch === sessionEpoch.current) setSettingsBusy(false)
     }
+  }
+
+  async function loadModels(): Promise<void> {
+    const epoch = sessionEpoch.current
+    setModelsLoading(true)
+    setError('')
+    try {
+      const models = await api.listAiModels(settings.baseUrl, settings.apiKey)
+      if (epoch !== sessionEpoch.current) return
+      setAvailableModels(models)
+      setSettings((current) => ({ ...current, model: models.includes(current.model) ? current.model : models[0] }))
+    } catch (err) {
+      if (epoch === sessionEpoch.current) setError(errorText(err))
+    } finally {
+      if (epoch === sessionEpoch.current) setModelsLoading(false)
+    }
+  }
+
+  async function ensureAiConfigured(): Promise<boolean> {
+    const epoch = sessionEpoch.current
+    try {
+      const current = await api.getAiSettings()
+      if (epoch !== sessionEpoch.current) return false
+      if (current.baseUrl && current.hasApiKey && current.model) return true
+      await openSettings('请先填写 AI 服务地址和 API Key，然后加载并选择模型。')
+    } catch (err) {
+      if (epoch === sessionEpoch.current) setError(errorText(err))
+    }
+    return false
+  }
+
+  async function openPrompt(): Promise<void> {
+    const epoch = sessionEpoch.current
+    if (!await ensureAiConfigured()) return
+    if (epoch !== sessionEpoch.current) return
+    setError('')
+    setPrompt('')
+    setPromptOpen(true)
   }
 
   function newMessage(reply = false): void {
@@ -200,46 +381,54 @@ function EmailApp(): React.JSX.Element {
   }
 
   async function generateMailDraft(): Promise<void> {
+    const epoch = sessionEpoch.current
     setPromptBusy(true)
     setError('')
     try {
       const result = await api.generateDraft(prompt, accountId)
+      if (epoch !== sessionEpoch.current) return
       setDraft(result)
       setComposePreview(false)
       setPromptOpen(false)
       setComposeOpen(true)
     } catch (err) {
-      setError(errorText(err))
+      if (epoch === sessionEpoch.current) setError(errorText(err))
     } finally {
-      setPromptBusy(false)
+      if (epoch === sessionEpoch.current) setPromptBusy(false)
     }
   }
 
   async function send(): Promise<void> {
+    const epoch = sessionEpoch.current
     setComposeBusy(true)
     setError('')
     try {
       await api.sendMail(draft)
+      if (epoch !== sessionEpoch.current) return
       setComposeOpen(false)
       setComposePreview(false)
       setRefreshTick((value) => value + 1)
     } catch (err) {
-      setError(errorText(err))
+      if (epoch === sessionEpoch.current) setError(errorText(err))
     } finally {
-      setComposeBusy(false)
+      if (epoch === sessionEpoch.current) setComposeBusy(false)
     }
   }
 
   async function createDigest(): Promise<void> {
+    const epoch = sessionEpoch.current
+    if (!await ensureAiConfigured()) return
+    if (epoch !== sessionEpoch.current) return
     setDigestLoading(true)
     setError('')
     setView('digest')
     try {
-      setDigest(await api.generateDigest(accounts.map((account) => account.id)))
+      const result = await api.generateDigest(accounts.map((account) => account.id))
+      if (epoch === sessionEpoch.current) setDigest(result)
     } catch (err) {
-      setError(errorText(err))
+      if (epoch === sessionEpoch.current) setError(errorText(err))
     } finally {
-      setDigestLoading(false)
+      if (epoch === sessionEpoch.current) setDigestLoading(false)
     }
   }
 
@@ -295,6 +484,19 @@ function EmailApp(): React.JSX.Element {
     </div>
   </div>
 
+  if (!activeUser) return <div className="recovery-shell">
+    <div className="recovery-card">
+      <div className="brand">Email<span>Agent</span></div>
+      <h1>登录</h1>
+      {error && <Alert type="error" message={error} style={{ marginBottom: 18 }} />}
+      <div className="field"><label>账号</label><Input value={loginName}
+        onChange={(event) => setLoginName(event.target.value)} /></div>
+      <div className="field"><label>密码</label><Input.Password value={loginPassword}
+        onChange={(event) => setLoginPassword(event.target.value)} onPressEnter={() => void login()} /></div>
+      <Button type="primary" loading={loginBusy} block onClick={() => void login()}>登录</Button>
+    </div>
+  </div>
+
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand">Email<span>Agent</span></div>
@@ -311,8 +513,11 @@ function EmailApp(): React.JSX.Element {
         <span>{account.address}</span>
       </button>)}
       <div className="sidebar-bottom">
+        <div className="sidebar-user"><span>{activeUser}</span><button onClick={() => void logout()}>退出登录</button></div>
         <Button onClick={() => { setError(''); setAccountOpen(true) }}>添加邮箱</Button>
         <Button onClick={() => void openSettings()}>AI 设置</Button>
+        <Button onClick={() => { setError(''); setUserOpen(true) }}>添加用户</Button>
+        <Button onClick={() => { setError(''); setPasswordOpen(true) }}>修改密码</Button>
         <Button danger disabled={!accountId} onClick={() => Modal.confirm({
           title: '移除当前邮箱？', content: '只删除本机保存的账户和授权码，不会删除服务器上的邮件。',
           okText: '移除', cancelText: '取消', okButtonProps: { danger: true }, onOk: removeAccount
@@ -329,7 +534,7 @@ function EmailApp(): React.JSX.Element {
         <div className="topbar-actions">
           {view === 'mail' && <Button onClick={() => setRefreshTick((value) => value + 1)} disabled={!accountId}>刷新</Button>}
           {view === 'digest' && <Button onClick={() => void createDigest()} loading={digestLoading} disabled={!accounts.length}>重新生成</Button>}
-          <Button onClick={() => { setError(''); setPrompt(''); setPromptOpen(true) }} disabled={!accountId}>一句话写邮件</Button>
+          <Button onClick={() => void openPrompt()} disabled={!accountId}>一句话写邮件</Button>
           <Button type="primary" onClick={() => newMessage()} disabled={!accountId}>写邮件</Button>
         </div>
       </header>
@@ -393,20 +598,49 @@ function EmailApp(): React.JSX.Element {
       <div className="modal-actions"><Button onClick={() => setAccountOpen(false)}>取消</Button><Button type="primary" loading={accountBusy} onClick={() => void addAccount()}>测试并添加</Button></div>
     </Modal>
 
+    <Modal open={userOpen} title="添加用户" footer={null} onCancel={() => setUserOpen(false)} destroyOnHidden>
+      {error && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
+      <div className="field"><label>账号</label><Input value={newUserName}
+        onChange={(event) => setNewUserName(event.target.value)} /></div>
+      <div className="field"><label>密码</label><Input.Password value={newUserPassword}
+        onChange={(event) => setNewUserPassword(event.target.value)} /></div>
+      <div className="field"><label>确认密码</label><Input.Password value={confirmPassword}
+        onChange={(event) => setConfirmPassword(event.target.value)} /></div>
+      <div className="modal-actions"><Button onClick={() => setUserOpen(false)}>取消</Button>
+        <Button type="primary" loading={userBusy} onClick={() => void createUser()}>创建用户</Button></div>
+    </Modal>
+
+    <Modal open={passwordOpen} title="修改密码" footer={null} onCancel={() => setPasswordOpen(false)} destroyOnHidden>
+      {error && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
+      <div className="field"><label>当前密码</label><Input.Password value={currentPassword}
+        onChange={(event) => setCurrentPassword(event.target.value)} /></div>
+      <div className="field"><label>新密码</label><Input.Password value={nextPassword}
+        onChange={(event) => setNextPassword(event.target.value)} /></div>
+      <div className="field"><label>确认新密码</label><Input.Password value={confirmNextPassword}
+        onChange={(event) => setConfirmNextPassword(event.target.value)} /></div>
+      <div className="modal-actions"><Button onClick={() => setPasswordOpen(false)}>取消</Button>
+        <Button type="primary" loading={passwordBusy} onClick={() => void changePassword()}>保存新密码</Button></div>
+    </Modal>
+
     <Modal open={settingsOpen} title="AI 设置" footer={null} onCancel={() => setSettingsOpen(false)} destroyOnHidden>
       {error && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
+      {settingsNotice && <Alert type="info" message={settingsNotice} style={{ marginBottom: 16 }} />}
       <div className="field"><label>接口基础地址</label><Input value={settings.baseUrl} placeholder="https://example.com/v1"
-        onChange={(event) => setSettings({ ...settings, baseUrl: event.target.value })} /></div>
-      <div className="field"><label>模型名称</label><Input value={settings.model} placeholder="模型 ID"
-        onChange={(event) => setSettings({ ...settings, model: event.target.value })} /></div>
+        onChange={(event) => { setSettings({ ...settings, baseUrl: event.target.value, model: '' }); setAvailableModels([]) }} /></div>
       <div className="field"><label>API Key</label><Input.Password value={settings.apiKey} placeholder={hasAiKey ? '已保存，留空则保持不变' : '输入 API Key'}
-        onChange={(event) => setSettings({ ...settings, apiKey: event.target.value })} /></div>
+        onChange={(event) => { setSettings({ ...settings, apiKey: event.target.value, model: '' }); setAvailableModels([]) }} /></div>
+      <div className="field"><label>模型</label><div className="model-picker">
+        <Select showSearch value={settings.model || undefined} placeholder="先加载模型" disabled={!availableModels.length}
+          options={availableModels.map((model) => ({ label: model, value: model }))}
+          onChange={(model: string) => setSettings({ ...settings, model })} />
+        <Button loading={modelsLoading} onClick={() => void loadModels()}>加载模型</Button>
+      </div></div>
       <p className="field-help">生成摘要时，邮件正文片段会发送给你配置的 AI 服务。</p>
       <div className="field"><label>每日摘要时间</label><Input type="time" value={settings.dailyTime}
         onChange={(event) => setSettings({ ...settings, dailyTime: event.target.value })} /></div>
       <div className="field"><label>应用运行时自动生成</label><Switch checked={settings.autoDaily}
         onChange={(checked) => setSettings({ ...settings, autoDaily: checked })} /></div>
-      <div className="modal-actions"><Button onClick={() => setSettingsOpen(false)}>取消</Button><Button type="primary" loading={settingsBusy} onClick={() => void saveSettings()}>保存并测试</Button></div>
+      <div className="modal-actions"><Button onClick={() => setSettingsOpen(false)}>取消</Button><Button type="primary" loading={settingsBusy} disabled={!settings.model} onClick={() => void saveSettings()}>保存配置</Button></div>
     </Modal>
 
     <Modal open={promptOpen} title="一句话写邮件" footer={null} onCancel={() => setPromptOpen(false)} destroyOnHidden>

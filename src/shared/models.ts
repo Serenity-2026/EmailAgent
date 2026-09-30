@@ -57,7 +57,11 @@ export interface DailyDigest {
 }
 
 export interface DesktopApi {
-  getStorageStatus(): Promise<{ needsReset: boolean }>
+  getSession(): Promise<{ username: string | null; needsReset: boolean }>
+  login(username: string, password: string): Promise<{ username: string; needsReset: boolean }>
+  logout(): Promise<void>
+  createUser(username: string, password: string): Promise<void>
+  changePassword(currentPassword: string, nextPassword: string): Promise<void>
   retryStorage(): Promise<{ needsReset: boolean }>
   resetStorage(): Promise<string>
   listAccounts(): Promise<Account[]>
@@ -68,6 +72,7 @@ export interface DesktopApi {
   getSentFolder(accountId: string): Promise<string | null>
   sendMail(draft: MailDraft): Promise<void>
   getAiSettings(): Promise<AiSettingsView>
+  listAiModels(baseUrl: string, apiKey: string): Promise<string[]>
   saveAiSettings(input: AiSettingsInput): Promise<void>
   testAiConnection(): Promise<void>
   generateDraft(instruction: string, accountId: string): Promise<MailDraft>

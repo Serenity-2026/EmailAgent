@@ -11,7 +11,11 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 }
 
 const api: DesktopApi = {
-  getStorageStatus: () => invoke('storage:status'),
+  getSession: () => invoke('auth:session'),
+  login: (username, password) => invoke('auth:login', username, password),
+  logout: () => invoke('auth:logout'),
+  createUser: (username, password) => invoke('auth:create', username, password),
+  changePassword: (currentPassword, nextPassword) => invoke('auth:password', currentPassword, nextPassword),
   retryStorage: () => invoke('storage:retry'),
   resetStorage: () => invoke('storage:reset'),
   listAccounts: () => invoke('accounts:list'),
@@ -22,6 +26,7 @@ const api: DesktopApi = {
   getSentFolder: (accountId) => invoke('mail:sent-folder', accountId),
   sendMail: (draft) => invoke('mail:send', draft),
   getAiSettings: () => invoke('ai:settings:get'),
+  listAiModels: (baseUrl, apiKey) => invoke('ai:models', baseUrl, apiKey),
   saveAiSettings: (input) => invoke('ai:settings:save', input),
   testAiConnection: () => invoke('ai:settings:test'),
   generateDraft: (instruction, accountId) => invoke('ai:draft', instruction, accountId),

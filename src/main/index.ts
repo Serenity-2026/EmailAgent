@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import type { AccountInput, AiSettingsInput, DailyDigest, MailDraft } from '../shared/models'
-import { generateDigest as summarize, generateDraft, testAiConnection, validateAiSettings } from './ai'
+import { generateDigest as summarize, generateDraft, listAiModels, resolveAiKey, testAiConnection, validateAiSettings } from './ai'
 import { getMail, getSentFolder, listMail, sendMail, testAccount, todayMail } from './mail'
 import { validateAccount } from './providers'
 import { Store, type StoredAccount } from './store'
@@ -10,11 +10,24 @@ import { Store, type StoredAccount } from './store'
 let window: BrowserWindow | null = null
 let store: Store
 let dailyAttempt = ''
+let initialized = false
+const ownsInstance = app.requestSingleInstanceLock()
+
+if (!ownsInstance) app.quit()
+app.on('second-instance', () => {
+  if (!window || window.isDestroyed()) return
+  if (window.isMinimized()) window.restore()
+  window.focus()
+})
 
 function accountById(id: string): StoredAccount {
   const account = store.accounts.find((item) => item.id === id)
   if (!account) throw new Error('邮箱账户不存在')
   return account
+}
+
+function requireSession(version: number): void {
+  if (store.sessionVersion !== version || !store.activeUsername) throw new Error('登录状态已变化，请重试')
 }
 
 function todayStart(): Date {
@@ -28,22 +41,32 @@ function localDate(): string {
 }
 
 async function digestFor(accountIds: string[]): Promise<DailyDigest> {
+  const version = store.sessionVersion
+  const settings = store.ai
   const selected = accountIds.map(accountById)
   if (selected.length === 0) throw new Error('请先添加邮箱账户')
   const mail = (await Promise.all(selected.map((account) => todayMail(account, todayStart()))))
     .flat().sort((a, b) => a.date.localeCompare(b.date))
-  return summarize(store.ai, localDate(), mail)
+  requireSession(version)
+  const digest = await summarize(settings, localDate(), mail)
+  requireSession(version)
+  return digest
 }
 
 function registerIpc(): void {
-  ipcMain.handle('storage:status', () => ({ needsReset: store.needsReset }))
+  ipcMain.handle('auth:session', () => ({ username: store.activeUsername, needsReset: store.needsReset }))
+  ipcMain.handle('auth:login', (_event, username: string, password: string) => store.login(username, password))
+  ipcMain.handle('auth:logout', () => store.logout())
+  ipcMain.handle('auth:create', (_event, username: string, password: string) => store.addUser(username, password))
+  ipcMain.handle('auth:password', (_event, currentPassword: string, nextPassword: string) =>
+    store.changePassword(currentPassword, nextPassword))
   ipcMain.handle('storage:retry', async () => {
-    await store.load()
-    return { needsReset: store.needsReset }
+    return { needsReset: await store.retryUnreadable() }
   })
   ipcMain.handle('storage:reset', () => store.resetUnreadable())
   ipcMain.handle('accounts:list', () => store.accounts.map(({ authorizationCode: _code, ...account }) => account))
   ipcMain.handle('accounts:add', async (_event, input: AccountInput) => {
+    const version = store.sessionVersion
     validateAccount(input)
     if (store.accounts.some((account) => account.address.toLowerCase() === input.address.trim().toLowerCase())) {
       throw new Error('这个邮箱已经添加')
@@ -59,6 +82,7 @@ function registerIpc(): void {
     } catch {
       throw new Error('连接失败，请检查 IMAP/SMTP 是否开启及授权码是否正确')
     }
+    requireSession(version)
     await store.setAccounts([...store.accounts, account])
     const { authorizationCode: _code, ...view } = account
     return view
@@ -67,24 +91,51 @@ function registerIpc(): void {
     accountById(id)
     await store.setAccounts(store.accounts.filter((account) => account.id !== id))
   })
-  ipcMain.handle('mail:list', (_event, accountId: string, folder: string) => listMail(accountById(accountId), folder))
-  ipcMain.handle('mail:get', (_event, accountId: string, folder: string, uid: number) =>
-    getMail(accountById(accountId), folder, uid))
-  ipcMain.handle('mail:sent-folder', (_event, accountId: string) => getSentFolder(accountById(accountId)))
+  ipcMain.handle('mail:list', async (_event, accountId: string, folder: string) => {
+    const version = store.sessionVersion
+    const result = await listMail(accountById(accountId), folder)
+    requireSession(version)
+    return result
+  })
+  ipcMain.handle('mail:get', async (_event, accountId: string, folder: string, uid: number) => {
+    const version = store.sessionVersion
+    const result = await getMail(accountById(accountId), folder, uid)
+    requireSession(version)
+    return result
+  })
+  ipcMain.handle('mail:sent-folder', async (_event, accountId: string) => {
+    const version = store.sessionVersion
+    const result = await getSentFolder(accountById(accountId))
+    requireSession(version)
+    return result
+  })
   ipcMain.handle('mail:send', (_event, draft: MailDraft) => sendMail(accountById(draft.accountId), draft))
   ipcMain.handle('ai:settings:get', () => {
     const { apiKey: _key, ...view } = store.ai
     return { ...view, hasApiKey: Boolean(store.ai.apiKey) }
   })
+  ipcMain.handle('ai:models', (_event, baseUrl: string, apiKey: string) =>
+    listAiModels(baseUrl.trim(), resolveAiKey(baseUrl, apiKey, store.ai)))
   ipcMain.handle('ai:settings:save', async (_event, input: AiSettingsInput) => {
-    const settings = { ...input, apiKey: input.apiKey || store.ai.apiKey }
+    const version = store.sessionVersion
+    const settings = {
+      ...input,
+      baseUrl: input.baseUrl.trim().replace(/\/+$/, ''),
+      model: input.model.trim(),
+      apiKey: resolveAiKey(input.baseUrl, input.apiKey, store.ai)
+    }
     validateAiSettings(settings)
+    await testAiConnection(settings)
+    requireSession(version)
     await store.setAi(settings)
   })
   ipcMain.handle('ai:settings:test', () => testAiConnection(store.ai))
-  ipcMain.handle('ai:draft', (_event, instruction: string, accountId: string) => {
+  ipcMain.handle('ai:draft', async (_event, instruction: string, accountId: string) => {
+    const version = store.sessionVersion
     accountById(accountId)
-    return generateDraft(store.ai, instruction, accountId)
+    const draft = await generateDraft(store.ai, instruction, accountId)
+    requireSession(version)
+    return draft
   })
   ipcMain.handle('ai:digest', (_event, accountIds: string[]) => digestFor(accountIds))
 }
@@ -114,6 +165,7 @@ function createWindow(): void {
 
 function startDailySchedule(): void {
   setInterval(async () => {
+    if (!store.activeUsername || store.needsReset) return
     const settings = store.ai
     if (!settings.autoDaily || !settings.apiKey || store.accounts.length === 0 || !window || window.isDestroyed()) return
     const now = new Date()
@@ -122,19 +174,21 @@ function startDailySchedule(): void {
     if (clock < settings.dailyTime || dailyAttempt === date) return
     dailyAttempt = date
     try {
+      const version = store.sessionVersion
       const digest = await digestFor(store.accounts.map((account) => account.id))
-      window?.webContents.send('ai:digest:ready', digest)
+      if (store.sessionVersion === version) window?.webContents.send('ai:digest:ready', digest)
     } catch {
       // Manual generation remains available if the scheduled run fails.
     }
   }, 60_000)
 }
 
-app.whenReady().then(async () => {
+if (ownsInstance) app.whenReady().then(async () => {
   try {
     store = new Store(app.getPath('userData'))
     await store.load()
     registerIpc()
+    initialized = true
     createWindow()
     startDailySchedule()
   } catch (error) {
@@ -148,5 +202,5 @@ app.on('window-all-closed', () => {
 })
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  if (ownsInstance && initialized && BrowserWindow.getAllWindows().length === 0) createWindow()
 })
