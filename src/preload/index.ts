@@ -46,6 +46,11 @@ const api: DesktopApi = {
     ipcRenderer.on('agent:progress', handler)
     return () => ipcRenderer.removeListener('agent:progress', handler)
   },
+  onAppError: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, message: string): void => listener(message)
+    ipcRenderer.on('app:error', handler)
+    return () => ipcRenderer.removeListener('app:error', handler)
+  },
   getAgentOverview: () => invoke('agent:overview'),
   getThemeMode: () => invoke('theme:get'),
   setThemeMode: (mode) => invoke('theme:set', mode)

@@ -20,12 +20,13 @@ button, input, textarea { font: inherit; }
 .nav-item:disabled { opacity: .45; cursor: not-allowed; }
 .account-item { overflow: hidden; white-space: nowrap; }
 .account-item span { overflow: hidden; text-overflow: ellipsis; }
-.sidebar-bottom { flex: none; display: grid; gap: 8px; margin-top: auto; padding-top: 26px; }
-.sidebar-bottom .ant-btn { width: 100%; border-radius: 9px; }
-.sidebar-user { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 5px 8px; color: #66728a; font-size: 12px; }
-.sidebar-user button { padding: 0; border: 0; background: transparent; color: #5178db; cursor: pointer; }
-.theme-picker { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 5px 6px; color: #66728a; font-size: 12px; }
-.theme-picker .ant-select { width: 115px; }
+.sidebar-bottom { flex: none; margin-top: auto; padding-top: 26px; }
+.account-trigger { display: flex; width: 100%; align-items: center; gap: 10px; padding: 7px 8px; border: 0; border-radius: 11px; background: transparent; color: #465570; text-align: left; cursor: pointer; }
+.account-trigger:hover { background: #e8ecf7; }
+.account-avatar { display: grid; flex: none; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #5178db; color: #fff; font-size: 14px; font-weight: 700; }
+.account-settings { display: grid; gap: 9px; }
+.account-settings .field { margin-bottom: 8px; }
+.account-settings .ant-btn { text-align: left; }
 
 .workspace { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .topbar { flex: none; min-height: 92px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 30px; background: #fff; border-bottom: 1px solid #eaedf3; }
@@ -69,6 +70,8 @@ button, input, textarea { font: inherit; }
 .agent-history-item:hover, .agent-history-item.active { background: #eef3ff; color: #315dbb; }
 .agent-chat { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: #f7f8fc; }
 .agent-messages { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; align-content: start; gap: 18px; padding: 28px 36px; }
+.agent-overview { width: min(100%, 820px); padding: 22px; border: 1px solid #e9edf5; border-radius: 14px; background: #fff; }
+.agent-overview-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; color: #34435f; }
 .agent-message { max-width: 820px; padding: 18px 22px; border: 1px solid #e9edf5; border-radius: 14px; background: #fff; box-shadow: 0 5px 18px rgba(35, 52, 91, .025); }
 .agent-message.user { justify-self: end; max-width: min(82%, 650px); background: #e9f0ff; border-color: #dce7ff; }
 .agent-message-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
@@ -129,8 +132,9 @@ button, input, textarea { font: inherit; }
 :root[data-theme='dark'] .sidebar { background: #151e30; border-color: #29364d; }
 :root[data-theme='dark'] .brand, :root[data-theme='dark'] .topbar h1,
 :root[data-theme='dark'] .reader-card h2 { color: #eef2fa; }
-:root[data-theme='dark'] .sidebar-label, :root[data-theme='dark'] .sidebar-user,
-:root[data-theme='dark'] .theme-picker, :root[data-theme='dark'] .topbar p { color: #99a9c3; }
+:root[data-theme='dark'] .sidebar-label, :root[data-theme='dark'] .topbar p { color: #99a9c3; }
+:root[data-theme='dark'] .account-trigger { color: #d9e2f2; }
+:root[data-theme='dark'] .account-trigger:hover { background: #263b60; }
 :root[data-theme='dark'] .nav-item, :root[data-theme='dark'] .account-item { color: #b4c0d4; }
 :root[data-theme='dark'] .nav-item:hover, :root[data-theme='dark'] .account-item:hover,
 :root[data-theme='dark'] .nav-item.active, :root[data-theme='dark'] .account-item.active,
@@ -148,6 +152,8 @@ button, input, textarea { font: inherit; }
 :root[data-theme='dark'] .agent-message, :root[data-theme='dark'] .agent-proposal,
 :root[data-theme='dark'] .recovery-card { background: #192439; border-color: #2c3a52; color: #e1e8f5; }
 :root[data-theme='dark'] .agent-message.user { background: #24395f; }
+:root[data-theme='dark'] .agent-overview { background: #192439; border-color: #2c3a52; }
+:root[data-theme='dark'] .agent-overview-head { color: #d9e2f2; }
 :root[data-theme='dark'] .mail-body, :root[data-theme='dark'] .digest-body,
 :root[data-theme='dark'] .reader-meta strong, :root[data-theme='dark'] .recovery-card h1,
 :root[data-theme='dark'] .agent-proposal strong { color: #e1e8f5; }

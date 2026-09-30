@@ -162,6 +162,7 @@ export interface DesktopApi {
   confirmAgentProposal(proposalId: string): Promise<AgentConfirmResult>
   clearAgentHistory(): Promise<void>
   onAgentProgress(listener: (progress: AgentProgress) => void): () => void
+  onAppError(listener: (message: string) => void): () => void
   getAgentOverview(): Promise<MailOverview>
   getThemeMode(): Promise<ThemeMode>
   setThemeMode(mode: ThemeMode): Promise<void>

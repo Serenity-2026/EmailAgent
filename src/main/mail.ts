@@ -6,7 +6,7 @@ import { PROVIDERS, validateRecipient } from './providers'
 import type { StoredAccount } from './store'
 
 function clientFor(account: StoredAccount): ImapFlow {
-  return new ImapFlow({
+  const client = new ImapFlow({
     host: PROVIDERS[account.provider].imap,
     port: 993,
     secure: true,
@@ -14,6 +14,10 @@ function clientFor(account: StoredAccount): ImapFlow {
     connectionTimeout: 15_000,
     logger: false
   })
+  // ImapFlow can emit a connection error in addition to rejecting the active request.
+  // EventEmitter treats an unhandled error event as a main-process exception.
+  client.on('error', () => undefined)
+  return client
 }
 
 async function withImap<T>(account: StoredAccount, action: (client: ImapFlow) => Promise<T>): Promise<T> {

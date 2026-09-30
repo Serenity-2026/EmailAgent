@@ -254,12 +254,24 @@ function createWindow(): void {
   })
   window.webContents.on('will-navigate', (event) => event.preventDefault())
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  if (process.env.ELECTRON_RENDERER_URL) {
-    void window.loadURL(process.env.ELECTRON_RENDERER_URL)
-  } else {
-    void window.loadFile(join(__dirname, '../renderer/index.html'))
+  const load = process.env.ELECTRON_RENDERER_URL
+    ? window.loadURL(process.env.ELECTRON_RENDERER_URL)
+    : window.loadFile(join(__dirname, '../renderer/index.html'))
+  void load.catch(() => reportUnexpectedError())
+}
+
+function reportUnexpectedError(): void {
+  if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
+    try {
+      window.webContents.send('app:error', '应用遇到意外错误，请重试当前操作；若持续出现，请重新启动应用。')
+    } catch {
+      // A destroyed renderer cannot display the in-app error.
+    }
   }
 }
+
+process.on('uncaughtException', reportUnexpectedError)
+process.on('unhandledRejection', reportUnexpectedError)
 
 function startDailySchedule(): void {
   setInterval(async () => {

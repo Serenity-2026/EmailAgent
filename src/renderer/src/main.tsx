@@ -43,9 +43,9 @@ function EmailApp({ themeMode, setThemeMode, dark }: {
   const [agentStatus, setAgentStatus] = useState('')
   const [agentProposal, setAgentProposal] = useState<AgentProposal | null>(null)
   const [overview, setOverview] = useState<MailOverview | null>(null)
-  const [overviewOpen, setOverviewOpen] = useState(false)
   const [overviewLoading, setOverviewLoading] = useState(false)
   const [overviewError, setOverviewError] = useState('')
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false)
   const [error, setError] = useState('')
   const [activeUser, setActiveUser] = useState<string | null>(null)
   const [loginName, setLoginName] = useState('dmc')
@@ -83,6 +83,7 @@ function EmailApp({ themeMode, setThemeMode, dark }: {
   const [draft, setDraft] = useState<MailDraft>(emptyDraft(''))
   const pendingSource = useRef<{ mail: MailSummary; markRead: boolean } | null>(null)
   const agentMessagesRef = useRef<HTMLDivElement>(null)
+  const agentScrollState = useRef({ view: '', conversationId: '' })
   const overviewShown = useRef(false)
   const sessionEpoch = useRef(0)
 
@@ -111,7 +112,8 @@ function EmailApp({ themeMode, setThemeMode, dark }: {
       setView('digest')
     })
     const unsubscribeAgent = api.onAgentProgress((progress) => setAgentStatus(progress.detail))
-    return () => { unsubscribe(); unsubscribeAgent() }
+    const unsubscribeError = api.onAppError((message) => setError(message))
+    return () => { unsubscribe(); unsubscribeAgent(); unsubscribeError() }
   }, [api])
 
   useEffect(() => {
@@ -195,9 +197,9 @@ function EmailApp({ themeMode, setThemeMode, dark }: {
     setAgentStatus('')
     setAgentProposal(null)
     setOverview(null)
-    setOverviewOpen(false)
     setOverviewLoading(false)
     setOverviewError('')
+    setAccountSettingsOpen(false)
     overviewShown.current = false
     setThemeMode('system')
     setFolder('INBOX')
@@ -514,7 +516,6 @@ function EmailApp({ themeMode, setThemeMode, dark }: {
 
   async function loadOverview(): Promise<void> {
     const epoch = sessionEpoch.current
-    setOverviewOpen(true)
     setOverviewLoading(true)
     setOverviewError('')
     try {
@@ -601,9 +602,15 @@ function EmailApp({ themeMode, setThemeMode, dark }: {
   const activeConversation = agentConversations.find((item) => item.id === agentConversationId)
 
   useEffect(() => {
-    if (view === 'agent' && agentMessagesRef.current) {
-      agentMessagesRef.current.scrollTop = agentMessagesRef.current.scrollHeight
+    if (view !== 'agent') {
+      agentScrollState.current.view = view
+      return
     }
+    if (!agentMessagesRef.current) return
+    const previous = agentScrollState.current
+    const changedConversation = previous.view !== view || previous.conversationId !== agentConversationId
+    agentMessagesRef.current.scrollTop = changedConversation ? 0 : agentMessagesRef.current.scrollHeight
+    agentScrollState.current = { view, conversationId: agentConversationId }
   }, [view, agentConversationId, activeConversation?.messages.length, agentStatus])
 
   async function retryStorage(): Promise<void> {
@@ -674,7 +681,7 @@ function EmailApp({ themeMode, setThemeMode, dark }: {
       <button className={`nav-item ${view === 'digest' ? 'active' : ''}`}
         disabled={!accounts.length} onClick={() => { setView('digest'); if (!digest) void createDigest() }}>今日摘要</button>
       <button className={`nav-item ${view === 'agent' ? 'active' : ''}`}
-        disabled={!accounts.length} onClick={() => setView('agent')}>与邮箱对话</button>
+        disabled={!accounts.length} onClick={() => setView('agent')}>对话</button>
       <div className="sidebar-label">邮箱账户</div>
       {accounts.map((account) => <button key={account.id}
         className={`account-item ${account.id === accountId ? 'active' : ''}`}
@@ -682,32 +689,24 @@ function EmailApp({ themeMode, setThemeMode, dark }: {
         <span>{account.address}</span>
       </button>)}
       <div className="sidebar-bottom">
-        <div className="sidebar-user"><span>{activeUser}</span><button onClick={() => void logout()}>退出登录</button></div>
-        <div className="theme-picker"><span>主题</span><Select size="small" value={themeMode}
-          options={[{ label: '跟随系统', value: 'system' }, { label: '亮色', value: 'light' }, { label: '暗色', value: 'dark' }]}
-          onChange={(mode: ThemeMode) => void changeTheme(mode)} /></div>
-        <Button onClick={() => { setError(''); setAccountOpen(true) }}>添加邮箱</Button>
-        <Button onClick={() => void openSettings()}>AI 设置</Button>
-        <Button onClick={() => { setError(''); setUserOpen(true) }}>添加用户</Button>
-        <Button onClick={() => { setError(''); setPasswordOpen(true) }}>修改密码</Button>
-        <Button danger disabled={!accountId} onClick={() => Modal.confirm({
-          title: '移除当前邮箱？', content: '只删除本机保存的账户和授权码，不会删除服务器上的邮件。',
-          okText: '移除', cancelText: '取消', okButtonProps: { danger: true }, onOk: removeAccount
-        })}>移除当前邮箱</Button>
+        <button className="account-trigger" onClick={() => setAccountSettingsOpen(true)}
+          aria-label={`${activeUser}，打开设置`}>
+          <span className="account-avatar">{activeUser?.slice(0, 1).toUpperCase()}</span>
+          <span>{activeUser}</span>
+        </button>
       </div>
     </aside>
 
     <main className="workspace">
       <header className="topbar">
         <div>
-          <h1>{view === 'agent' ? '与邮箱对话' : view === 'digest' ? '今日摘要' : folder === 'INBOX' ? '收件箱' : '已发送'}</h1>
-          <p>{view === 'agent' ? '提问后可查看引用的原邮件' : view === 'digest' ? '汇总今天收到的邮件' : activeAccount?.address || '请先添加邮箱账户'}</p>
+          <h1>{view === 'agent' ? '对话' : view === 'digest' ? '今日摘要' : folder === 'INBOX' ? '收件箱' : '已发送'}</h1>
+          {view !== 'agent' && <p>{view === 'digest' ? '汇总今天收到的邮件' : activeAccount?.address || '请先添加邮箱账户'}</p>}
         </div>
         <div className="topbar-actions">
           {view === 'mail' && <Button onClick={() => setRefreshTick((value) => value + 1)} disabled={!accountId}>刷新</Button>}
           {view === 'digest' && <Button onClick={() => void createDigest()} loading={digestLoading} disabled={!accounts.length}>重新生成</Button>}
           {view === 'agent' && <Button onClick={() => { setAgentConversationId(''); setAgentProposal(null) }}>新对话</Button>}
-          {view === 'agent' && <Button onClick={() => void loadOverview()}>近期概览</Button>}
           <Button onClick={() => void openPrompt()} disabled={!accountId}>一句话写邮件</Button>
           <Button type="primary" onClick={() => newMessage()} disabled={!accountId}>写邮件</Button>
         </div>
@@ -728,7 +727,31 @@ function EmailApp({ themeMode, setThemeMode, dark }: {
         </div>
         <div className="agent-chat">
           <div className="agent-messages" ref={agentMessagesRef}>
-            {!activeConversation && !agentBusy && <Empty description="询问近期邮件，回答会附原文" />}
+            <div className="agent-overview">
+              <div className="agent-overview-head"><strong>最近 30 天</strong>
+                <Button size="small" loading={overviewLoading} onClick={() => void loadOverview()}>刷新</Button></div>
+              {overviewLoading && !overview ? <div className="top-spinner"><Spin /></div> : overviewError ?
+                <Alert type="error" message={overviewError} /> : overview && <>
+                  <div className="overview-metrics">
+                    <div><span>收到</span><strong>{overview.sampled ? '至少 ' : ''}{overview.received}</strong><span>封</span></div>
+                    <div><span>发出</span><strong>{overview.sampled ? '至少 ' : ''}{overview.sent}</strong><span>封</span></div>
+                  </div>
+                  <div className="overview-people">
+                    <div><h3>常见发件人</h3>{overview.topSenders.length ? overview.topSenders.map((item) =>
+                      <p key={item.address}>{item.address}<span>{item.count} 封</span></p>) : <span>暂无</span>}</div>
+                    <div><h3>常见收件人</h3>{overview.topRecipients.length ? overview.topRecipients.map((item) =>
+                      <p key={item.address}>{item.address}<span>{item.count} 封</span></p>) : <span>暂无</span>}</div>
+                  </div>
+                  <div className="overview-chart"><h3>内容星图</h3>
+                    {overview.topics.length ? <React.Suspense fallback={<div className="top-spinner"><Spin /></div>}>
+                      <RadarChart data={overview.topics} xField="name" yField="count"
+                        height={280} theme={dark ? 'classicDark' : 'classic'} />
+                    </React.Suspense> : <Empty description="暂无主题分布" />}
+                  </div>
+                  {overview.sampled && <div className="agent-warning">邮件数量超过检索上限，以上为抽样统计。</div>}
+                  {overview.warnings.map((warning, index) => <div key={index} className="agent-warning">{warning}</div>)}
+                </>}
+            </div>
             {activeConversation?.messages.map((message) => <div key={message.id}
               className={`agent-message ${message.role}`}>
               <div className="agent-message-text">{message.content.split(/(\[\d+\])/g).map((part, index) => {
@@ -826,31 +849,21 @@ function EmailApp({ themeMode, setThemeMode, dark }: {
       </section>}
     </main>
 
-    <Modal open={overviewOpen} title="最近 30 天邮箱概览" width={760} onCancel={() => setOverviewOpen(false)}
-      footer={<><Button loading={overviewLoading} onClick={() => void loadOverview()}>刷新</Button>
-        <Button type="primary" onClick={() => setOverviewOpen(false)}>开始对话</Button></>} destroyOnHidden>
-      {overviewLoading ? <div className="top-spinner"><Spin /></div> : overviewError ?
-        <Alert type="error" message={overviewError} /> : overview && <>
-          <div className="overview-metrics">
-            <div><span>收到</span><strong>{overview.sampled ? '至少 ' : ''}{overview.received}</strong><span>封</span></div>
-            <div><span>发出</span><strong>{overview.sampled ? '至少 ' : ''}{overview.sent}</strong><span>封</span></div>
-          </div>
-          <div className="overview-people">
-            <div><h3>常见发件人</h3>{overview.topSenders.length ? overview.topSenders.map((item) =>
-              <p key={item.address}>{item.address}<span>{item.count} 封</span></p>) : <span>暂无</span>}</div>
-            <div><h3>常见收件人</h3>{overview.topRecipients.length ? overview.topRecipients.map((item) =>
-              <p key={item.address}>{item.address}<span>{item.count} 封</span></p>) : <span>暂无</span>}</div>
-          </div>
-          <div className="overview-chart"><h3>内容星图 <span>最近最多 20 封</span></h3>
-            {overview.topics.length ? <React.Suspense fallback={<div className="top-spinner"><Spin /></div>}>
-              <RadarChart data={overview.topics} xField="name" yField="count"
-                height={280} theme={dark ? 'classicDark' : 'classic'} />
-            </React.Suspense> :
-              <Empty description="暂无主题分布" />}
-          </div>
-          {overview.sampled && <div className="agent-warning">邮件数量超过检索上限，以上为抽样统计。</div>}
-          {overview.warnings.map((warning, index) => <div key={index} className="agent-warning">{warning}</div>)}
-        </>}
+    <Modal open={accountSettingsOpen} title="设置" footer={null} onCancel={() => setAccountSettingsOpen(false)} destroyOnHidden>
+      <div className="account-settings">
+        <div className="field"><label>主题</label><Select value={themeMode}
+          options={[{ label: '跟随系统', value: 'system' }, { label: '亮色', value: 'light' }, { label: '暗色', value: 'dark' }]}
+          onChange={(mode: ThemeMode) => void changeTheme(mode)} /></div>
+        <Button onClick={() => { setAccountSettingsOpen(false); void openSettings() }}>AI 设置</Button>
+        <Button onClick={() => { setAccountSettingsOpen(false); setError(''); setAccountOpen(true) }}>添加邮箱</Button>
+        <Button onClick={() => { setAccountSettingsOpen(false); setError(''); setUserOpen(true) }}>添加用户</Button>
+        <Button onClick={() => { setAccountSettingsOpen(false); setError(''); setPasswordOpen(true) }}>修改密码</Button>
+        <Button danger disabled={!accountId} onClick={() => { setAccountSettingsOpen(false); Modal.confirm({
+          title: '移除当前邮箱？', content: '只删除本机保存的账户和授权码，不会删除服务器上的邮件。',
+          okText: '移除', cancelText: '取消', okButtonProps: { danger: true }, onOk: removeAccount
+        }) }}>移除当前邮箱</Button>
+        <Button onClick={() => { setAccountSettingsOpen(false); void logout() }}>退出登录</Button>
+      </div>
     </Modal>
 
     <Modal open={accountOpen} title="添加邮箱" footer={null} onCancel={() => setAccountOpen(false)} destroyOnHidden>

@@ -3,13 +3,26 @@ import type { AgentAction, AgentMailRef } from '../shared/models'
 import type { StoredAccount } from './store'
 
 const state = vi.hoisted(() => ({
-  uidValidity: 55n, archive: false, exists: true, calls: [] as string[], searchCount: 0
+  uidValidity: 55n, archive: false, exists: true, calls: [] as string[], searchCount: 0, connectionError: false
 }))
 
 vi.mock('imapflow', () => ({
   ImapFlow: class {
     mailbox: { uidValidity: bigint } | false = false
-    async connect(): Promise<void> { state.calls.push('connect') }
+    private errorListener?: (error: Error) => void
+    on(event: string, listener: (error: Error) => void): this {
+      if (event === 'error') this.errorListener = listener
+      return this
+    }
+    async connect(): Promise<void> {
+      state.calls.push('connect')
+      if (state.connectionError) {
+        if (!this.errorListener) throw new Error('Unhandled IMAP error event')
+        this.errorListener(new Error('connection lost'))
+        state.calls.push('error handled')
+        throw new Error('connection lost')
+      }
+    }
     async logout(): Promise<void> { state.calls.push('logout') }
     async list(): Promise<Array<{ path: string; name: string; specialUse: string }>> {
       return [
@@ -53,10 +66,17 @@ beforeEach(() => {
   state.archive = false
   state.exists = true
   state.searchCount = 0
+  state.connectionError = false
   state.calls = []
 })
 
 describe('Agent IMAP access', () => {
+  it('handles an IMAP error event while the connection request fails', async () => {
+    state.connectionError = true
+    await expect(searchAgentMail(account, { since: new Date('2026-07-01') })).rejects.toThrow('connection lost')
+    expect(state.calls).toContain('error handled')
+    expect(state.calls).toContain('logout')
+  })
   it('reads mail without setting the Seen flag', async () => {
     const result = await readAgentMailBatch(account, [mail])
     expect(result[0].text).toContain('周五提交报告')
