@@ -16,6 +16,7 @@ button, input, textarea { font: inherit; }
 .nav-item, .account-item { display: flex; width: 100%; align-items: center; gap: 10px; padding: 10px 12px; border: 0; border-radius: 10px; background: transparent; color: #dbe6f5; text-align: left; cursor: pointer; }
 .nav-item:hover, .account-item:hover { background: #203857; }
 .nav-item.active, .account-item.active { background: #315985; color: #fff; }
+.nav-item:disabled { opacity: .45; cursor: not-allowed; }
 .account-item { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-item span { overflow: hidden; text-overflow: ellipsis; }
 .sidebar-bottom { margin-top: auto; display: grid; gap: 8px; }

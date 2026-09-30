@@ -39,7 +39,7 @@ function registerIpc(): void {
   ipcMain.handle('accounts:list', () => store.accounts.map(({ authorizationCode: _code, ...account }) => account))
   ipcMain.handle('accounts:add', async (_event, input: AccountInput) => {
     validateAccount(input)
-    if (store.accounts.some((account) => account.address.toLowerCase() === input.address.toLowerCase())) {
+    if (store.accounts.some((account) => account.address.toLowerCase() === input.address.trim().toLowerCase())) {
       throw new Error('这个邮箱已经添加')
     }
     const account: StoredAccount = {

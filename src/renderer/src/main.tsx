@@ -244,9 +244,9 @@ function EmailApp(): React.JSX.Element {
       <button className={`nav-item ${view === 'mail' && folder === 'INBOX' ? 'active' : ''}`}
         onClick={() => { setFolder('INBOX'); setView('mail') }}>收件箱</button>
       <button className={`nav-item ${view === 'mail' && folder !== 'INBOX' ? 'active' : ''}`}
-        onClick={() => void showSent()}>已发送</button>
+        disabled={!accountId} onClick={() => void showSent()}>已发送</button>
       <button className={`nav-item ${view === 'digest' ? 'active' : ''}`}
-        onClick={() => { setView('digest'); if (!digest) void createDigest() }}>今日摘要</button>
+        disabled={!accounts.length} onClick={() => { setView('digest'); if (!digest) void createDigest() }}>今日摘要</button>
       <div className="sidebar-label">邮箱账户</div>
       {accounts.map((account) => <button key={account.id}
         className={`account-item ${account.id === accountId ? 'active' : ''}`}

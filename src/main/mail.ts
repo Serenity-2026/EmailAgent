@@ -44,13 +44,14 @@ export async function testAccount(account: StoredAccount): Promise<void> {
 
 function summaryOf(account: StoredAccount, folder: string, message: FetchMessageObject): MailSummary {
   const sender = message.envelope?.from?.[0]
+  const date = new Date(message.envelope?.date || message.internalDate || new Date())
   return {
     uid: message.uid,
     accountId: account.id,
     folder,
     from: sender?.name ? `${sender.name} <${sender.address || ''}>` : sender?.address || '未知发件人',
     subject: message.envelope?.subject || '（无主题）',
-    date: new Date(message.envelope?.date || message.internalDate || new Date()).toISOString(),
+    date: Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString(),
     unread: !message.flags?.has('\\Seen')
   }
 }

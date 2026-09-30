@@ -23,4 +23,10 @@ describe('AI input and output boundaries', () => {
       'account-1', ['teacher@example.com'])
     expect(draft.to).toBe('')
   })
+
+  it('accepts a JSON code block returned by a model', () => {
+    const draft = parseGeneratedDraft('```json\n{"to":"teacher@example.com","subject":"报告","text":"周五提交。"}\n```',
+      'account-1', ['teacher@example.com'])
+    expect(draft.to).toBe('teacher@example.com')
+  })
 })

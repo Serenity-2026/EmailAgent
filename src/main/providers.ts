@@ -7,9 +7,10 @@ export const PROVIDERS: Record<Provider, { domain: string; imap: string; smtp: s
 
 export function validateAccount(input: AccountInput): void {
   const preset = PROVIDERS[input.provider]
+  const address = input.address.trim()
   if (!preset) throw new Error('请选择支持的邮箱服务商')
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.address)) throw new Error('请输入有效的邮箱地址')
-  if (!input.address.toLowerCase().endsWith(`@${preset.domain}`)) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error('请输入有效的邮箱地址')
+  if (!address.toLowerCase().endsWith(`@${preset.domain}`)) {
     throw new Error(`邮箱地址应以 @${preset.domain} 结尾`)
   }
   if (!input.authorizationCode.trim()) throw new Error('请输入邮箱客户端授权码')

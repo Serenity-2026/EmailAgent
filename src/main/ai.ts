@@ -49,7 +49,7 @@ async function complete(settings: AiSettingsInput, system: string, user: string)
 export function parseGeneratedDraft(raw: string, accountId: string, allowedRecipients: string[]): MailDraft {
   let value: unknown
   try {
-    value = JSON.parse(raw)
+    value = JSON.parse(raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''))
   } catch {
     throw new Error('AI 返回的草稿格式无效，请重试')
   }
