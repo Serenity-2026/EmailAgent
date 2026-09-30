@@ -1,0 +1,33 @@
+import { contextBridge, ipcRenderer } from 'electron'
+import type { DailyDigest, DesktopApi } from '../shared/models'
+
+async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
+  try {
+    return await ipcRenderer.invoke(channel, ...args) as T
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(message.replace(/^Error invoking remote method '[^']+':\s*(?:[A-Za-z]*Error:\s*)?/, ''))
+  }
+}
+
+const api: DesktopApi = {
+  listAccounts: () => invoke('accounts:list'),
+  addAccount: (input) => invoke('accounts:add', input),
+  removeAccount: (id) => invoke('accounts:remove', id),
+  listMail: (accountId, folder) => invoke('mail:list', accountId, folder),
+  getMail: (accountId, folder, uid) => invoke('mail:get', accountId, folder, uid),
+  getSentFolder: (accountId) => invoke('mail:sent-folder', accountId),
+  sendMail: (draft) => invoke('mail:send', draft),
+  getAiSettings: () => invoke('ai:settings:get'),
+  saveAiSettings: (input) => invoke('ai:settings:save', input),
+  testAiConnection: () => invoke('ai:settings:test'),
+  generateDraft: (instruction, accountId) => invoke('ai:draft', instruction, accountId),
+  generateDigest: (accountIds) => invoke('ai:digest', accountIds),
+  onDailyDigest: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, digest: DailyDigest): void => listener(digest)
+    ipcRenderer.on('ai:digest:ready', handler)
+    return () => ipcRenderer.removeListener('ai:digest:ready', handler)
+  }
+}
+
+contextBridge.exposeInMainWorld('emailAgent', api)

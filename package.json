@@ -1,0 +1,37 @@
+{
+  "name": "emailagent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "QQ and 163 desktop email assistant",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "preview": "electron-vite preview",
+    "package:mac": "npm run build && electron-builder --mac dir --publish never"
+  },
+  "dependencies": {
+    "antd": "6.6.5",
+    "imapflow": "2.1.2",
+    "mailparser": "3.9.3",
+    "nodemailer": "10.0.13",
+    "react": "19.2.1",
+    "react-dom": "19.2.1"
+  },
+  "devDependencies": {
+    "@types/mailparser": "^3.4.6",
+    "@types/node": "^22.19.1",
+    "@types/nodemailer": "^7.0.10",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "electron": "44.5.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.6",
+    "vitest": "^4.0.18"
+  }
+}

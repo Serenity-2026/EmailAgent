@@ -1,0 +1,69 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #20324b;
+  background: #f4f7fb;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input, textarea { font: inherit; }
+
+.app-shell { display: grid; grid-template-columns: 245px minmax(0, 1fr); height: 100vh; min-height: 600px; }
+.sidebar { display: flex; flex-direction: column; padding: 28px 18px 18px; background: #14243c; color: #e9f0fa; }
+.brand { padding: 0 12px 30px; font-size: 22px; font-weight: 700; letter-spacing: -.5px; }
+.brand span { color: #75a7ff; }
+.sidebar-label { margin: 26px 12px 10px; color: #8fa6c7; font-size: 11px; font-weight: 700; letter-spacing: 1.4px; }
+.nav-item, .account-item { display: flex; width: 100%; align-items: center; gap: 10px; padding: 10px 12px; border: 0; border-radius: 10px; background: transparent; color: #dbe6f5; text-align: left; cursor: pointer; }
+.nav-item:hover, .account-item:hover { background: #203857; }
+.nav-item.active, .account-item.active { background: #315985; color: #fff; }
+.account-item { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-item span { overflow: hidden; text-overflow: ellipsis; }
+.sidebar-bottom { margin-top: auto; display: grid; gap: 8px; }
+.sidebar-bottom .ant-btn { width: 100%; }
+.workspace { min-width: 0; display: flex; flex-direction: column; }
+.topbar { height: 78px; display: flex; align-items: center; justify-content: space-between; padding: 18px 30px; border-bottom: 1px solid #e2e9f2; background: #fff; }
+.topbar h1 { margin: 0; font-size: 22px; }
+.topbar p { margin: 4px 0 0; color: #78889c; font-size: 13px; }
+.topbar-actions { display: flex; gap: 8px; }
+.content { flex: 1; min-height: 0; display: grid; grid-template-columns: 350px minmax(0, 1fr); }
+.mail-list { min-height: 0; overflow: auto; background: #fff; border-right: 1px solid #e2e9f2; }
+.mail-list-head { display: flex; justify-content: space-between; align-items: center; padding: 19px 20px 10px; font-size: 12px; color: #8a9ab0; }
+.mail-row { width: 100%; padding: 17px 20px; border: 0; border-bottom: 1px solid #edf1f6; background: #fff; color: inherit; text-align: left; cursor: pointer; }
+.mail-row:hover { background: #f6f9ff; }
+.mail-row.selected { background: #edf4ff; border-left: 3px solid #4e82d4; padding-left: 17px; }
+.mail-row.unread .mail-row-subject { font-weight: 700; }
+.mail-row-top { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.mail-row-from { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.mail-row-date { color: #92a1b4; white-space: nowrap; font-size: 11px; }
+.mail-row-subject { margin-top: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.reader { min-width: 0; overflow: auto; padding: 35px 42px; }
+.reader-card { min-height: 100%; max-width: 900px; margin: 0 auto; padding: 35px 42px; background: #fff; border: 1px solid #e5ebf3; border-radius: 18px; box-shadow: 0 14px 36px rgba(28, 54, 91, .05); }
+.reader-card h2 { margin: 0 0 16px; font-size: 23px; line-height: 1.4; }
+.reader-meta { display: grid; gap: 7px; color: #687b93; font-size: 13px; }
+.reader-meta strong { color: #334a68; }
+.reader-divider { height: 1px; margin: 25px 0; background: #e8edf4; }
+.mail-body, .digest-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; font-size: 14px; }
+.reader-actions { margin-top: 28px; display: flex; gap: 8px; }
+.empty-pane { display: grid; place-items: center; height: 100%; color: #8a9ab0; }
+.digest-view { flex: 1; overflow: auto; padding: 34px; }
+.digest-card { max-width: 920px; margin: 0 auto; padding: 32px 38px; background: #fff; border: 1px solid #e5ebf3; border-radius: 18px; }
+.digest-card h2 { margin: 0 0 12px; }
+.digest-sources { display: grid; gap: 8px; margin-top: 18px; }
+.source-row { width: 100%; border: 1px solid #e6edf7; border-radius: 8px; padding: 10px 12px; text-align: left; background: #f8fbff; color: #28538a; cursor: pointer; }
+.source-row:hover { background: #edf4ff; }
+.field { display: grid; gap: 6px; margin-bottom: 16px; }
+.field label { font-size: 13px; font-weight: 600; color: #465a74; }
+.field-help { font-size: 12px; color: #8292a8; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.compose-preview { display: grid; gap: 11px; padding: 16px; border: 1px solid #dfe8f4; border-radius: 10px; background: #f9fbfe; }
+.compose-preview p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.small-note { color: #8797aa; font-size: 12px; }
+.error-wrap { padding: 16px 24px 0; }
+.top-spinner { display: flex; justify-content: center; padding: 40px; }
+
+@media (max-width: 1000px) {
+  .app-shell { grid-template-columns: 190px minmax(0, 1fr); }
+  .content { grid-template-columns: 290px minmax(0, 1fr); }
+  .reader { padding: 20px; }
+  .reader-card { padding: 25px; }
+}
