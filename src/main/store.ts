@@ -28,6 +28,12 @@ interface VaultFile {
   users: UserVault[]
 }
 
+interface SavedSession {
+  version: 1
+  username: string
+  secret: string
+}
+
 const emptyData = (): StoredData => ({
   accounts: [],
   ai: { baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false },
@@ -87,6 +93,7 @@ function encryptVault(username: string, salt: string, key: Buffer, data: StoredD
 
 export class Store {
   private readonly path: string
+  private readonly sessionPath: string
   private file: VaultFile | null = null
   private legacyEncoded: string | null = null
   private data: StoredData = emptyData()
@@ -96,9 +103,11 @@ export class Store {
   private unreadable = false
   private session = 0
   private pendingWrite: Promise<void> = Promise.resolve()
+  private pendingSessionWrite: Promise<void> = Promise.resolve()
 
   constructor(directory: string) {
     this.path = join(directory, 'emailagent.enc')
+    this.sessionPath = join(directory, 'emailagent.session')
   }
 
   async load(): Promise<void> {
@@ -134,8 +143,47 @@ export class Store {
     return this.unreadable
   }
 
+  async restoreSession(): Promise<boolean> {
+    let encoded: string
+    try {
+      encoded = await readFile(this.sessionPath, 'utf8')
+    } catch {
+      return false
+    }
+    if (!safeStorage.isEncryptionAvailable() ||
+      (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')) return false
+    let key: Buffer | null = null
+    try {
+      const session = JSON.parse(encoded) as SavedSession
+      if (session.version !== 1 || typeof session.username !== 'string' || typeof session.secret !== 'string') {
+        throw new Error('保存的登录状态无效')
+      }
+      const vault = this.file?.users.find((item) => item.username === session.username)
+      if (!vault) throw new Error('用户数据不存在')
+      key = Buffer.from(safeStorage.decryptString(Buffer.from(session.secret, 'base64')), 'base64')
+      if (key.length !== 32) throw new Error('保存的登录状态无效')
+      const data = decryptVault(vault, key)
+      this.username = vault.username
+      this.salt = vault.salt
+      this.key = key
+      this.data = data
+      return true
+    } catch {
+      key?.fill(0)
+      await this.forgetSession().catch(() => undefined)
+      return false
+    }
+  }
+
+  async forgetSession(): Promise<void> {
+    const operation = this.pendingSessionWrite.then(() => rm(this.sessionPath, { force: true }))
+    this.pendingSessionWrite = operation.catch(() => undefined)
+    await operation
+  }
+
   async login(username: string, password: string): Promise<{ username: string; needsReset: boolean }> {
     this.logout()
+    await this.forgetSession()
     const version = this.session
     await this.pendingWrite
     if (this.session !== version) throw new Error('登录状态已变化，请重试')
@@ -159,6 +207,7 @@ export class Store {
       if (JSON.stringify(retained) !== JSON.stringify(data.agentConversations || [])) {
         await this.setAgentConversations(retained)
       }
+      await this.rememberSession().catch(() => undefined)
       return { username: name, needsReset: false }
     }
 
@@ -179,6 +228,7 @@ export class Store {
     }
     await this.save(this.data)
     if (this.session !== version) throw new Error('登录状态已变化，请重试')
+    await this.rememberSession().catch(() => undefined)
     return { username: name, needsReset: false }
   }
 
@@ -231,6 +281,7 @@ export class Store {
     this.key!.fill(0)
     this.key = key
     this.salt = salt
+    await this.rememberSession().catch(() => undefined)
   }
 
   async retryUnreadable(): Promise<boolean> {
@@ -243,6 +294,7 @@ export class Store {
       if (this.session === version) {
         this.data = data
         this.unreadable = false
+        await this.rememberSession().catch(() => undefined)
       }
     } catch {
       this.unreadable = true
@@ -261,6 +313,7 @@ export class Store {
     if (this.session === version) {
       this.data = fresh
       this.unreadable = false
+      await this.rememberSession().catch(() => undefined)
     }
     return backup
   }
@@ -333,6 +386,29 @@ export class Store {
     await copyFile(this.path, backup)
     await chmod(backup, 0o600)
     return backup
+  }
+
+  private async rememberSession(): Promise<void> {
+    const version = this.session
+    const operation = this.pendingSessionWrite.then(async () => {
+      if (this.session !== version || !this.username || !this.key || !safeStorage.isEncryptionAvailable() ||
+        (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')) return
+      const session: SavedSession = {
+        version: 1,
+        username: this.username,
+        secret: safeStorage.encryptString(this.key.toString('base64')).toString('base64')
+      }
+      const temporary = `${this.sessionPath}.${randomUUID()}.tmp`
+      try {
+        await writeFile(temporary, JSON.stringify(session), { mode: 0o600, flag: 'wx' })
+        await chmod(temporary, 0o600)
+        if (this.session === version) await rename(temporary, this.sessionPath)
+      } finally {
+        await rm(temporary, { force: true })
+      }
+    })
+    this.pendingSessionWrite = operation.catch(() => undefined)
+    await operation
   }
 
   private async save(data: StoredData, resetting = false): Promise<void> {

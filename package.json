@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "preview": "electron-vite preview",
-    "package:mac": "npm run build && electron-builder --mac dir --publish never"
+    "package:mac": "npm run build && electron-builder --mac dir --publish never --config.electronDist=node_modules/electron/dist"
   },
   "dependencies": {
     "@ant-design/plots": "2.6.8",

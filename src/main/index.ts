@@ -67,7 +67,8 @@ function registerIpc(): void {
     nativeTheme.themeSource = result.needsReset ? 'system' : store.themeMode
     return result
   })
-  ipcMain.handle('auth:logout', () => {
+  ipcMain.handle('auth:logout', async () => {
+    await store.forgetSession()
     store.logout()
     agentProposals.clear()
     nativeTheme.themeSource = 'system'
@@ -297,6 +298,8 @@ if (ownsInstance) app.whenReady().then(async () => {
   try {
     store = new Store(app.getPath('userData'))
     await store.load()
+    await store.restoreSession()
+    if (store.activeUsername) nativeTheme.themeSource = store.themeMode
     registerIpc()
     initialized = true
     createWindow()
