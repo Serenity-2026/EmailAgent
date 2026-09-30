@@ -45,7 +45,10 @@ const api: DesktopApi = {
     const handler = (_event: Electron.IpcRendererEvent, progress: Parameters<typeof listener>[0]): void => listener(progress)
     ipcRenderer.on('agent:progress', handler)
     return () => ipcRenderer.removeListener('agent:progress', handler)
-  }
+  },
+  getAgentOverview: () => invoke('agent:overview'),
+  getThemeMode: () => invoke('theme:get'),
+  setThemeMode: (mode) => invoke('theme:set', mode)
 }
 
 contextBridge.exposeInMainWorld('emailAgent', api)

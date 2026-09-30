@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Alert, Button, Empty, Input, Modal, Select, Spin, Switch } from 'antd'
+import { Alert, Button, ConfigProvider, Empty, Input, Modal, Select, Spin, Switch, theme } from 'antd'
 import 'antd/dist/reset.css'
 import type {
   Account, AccountInput, AgentConversation, AgentMessage, AgentProposal, AiSettingsInput, DailyDigest, DesktopApi,
-  MailDetail, MailDraft, MailSummary, Provider
+  MailDetail, MailDraft, MailOverview, MailSummary, Provider, ThemeMode
 } from '../../shared/models'
 import { MailHtmlView } from './mail-html'
 import './styles.css'
@@ -18,8 +18,11 @@ const errorText = (error: unknown): string => error instanceof Error ? error.mes
 const dateText = (date: string): string => new Intl.DateTimeFormat('zh-CN', {
   month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'
 }).format(new Date(date))
+const RadarChart = React.lazy(async () => ({ default: (await import('@ant-design/plots')).Radar }))
 
-function EmailApp(): React.JSX.Element {
+function EmailApp({ themeMode, setThemeMode, dark }: {
+  themeMode: ThemeMode; setThemeMode: (mode: ThemeMode) => void; dark: boolean
+}): React.JSX.Element {
   const api = window.emailAgent
   const [accounts, setAccounts] = useState<Account[]>([])
   const [accountId, setAccountId] = useState('')
@@ -39,6 +42,10 @@ function EmailApp(): React.JSX.Element {
   const [agentBusy, setAgentBusy] = useState(false)
   const [agentStatus, setAgentStatus] = useState('')
   const [agentProposal, setAgentProposal] = useState<AgentProposal | null>(null)
+  const [overview, setOverview] = useState<MailOverview | null>(null)
+  const [overviewOpen, setOverviewOpen] = useState(false)
+  const [overviewLoading, setOverviewLoading] = useState(false)
+  const [overviewError, setOverviewError] = useState('')
   const [error, setError] = useState('')
   const [activeUser, setActiveUser] = useState<string | null>(null)
   const [loginName, setLoginName] = useState('dmc')
@@ -76,6 +83,7 @@ function EmailApp(): React.JSX.Element {
   const [draft, setDraft] = useState<MailDraft>(emptyDraft(''))
   const pendingSource = useRef<{ mail: MailSummary; markRead: boolean } | null>(null)
   const agentMessagesRef = useRef<HTMLDivElement>(null)
+  const overviewShown = useRef(false)
   const sessionEpoch = useRef(0)
 
   useEffect(() => {
@@ -86,11 +94,12 @@ function EmailApp(): React.JSX.Element {
         return
       }
       if (username) {
-        const [items, history] = await Promise.all([api.listAccounts(), api.listAgentConversations()])
+        const [items, history, mode] = await Promise.all([api.listAccounts(), api.listAgentConversations(), api.getThemeMode()])
         setAccounts(items)
         if (items.length) setAccountId(items[0].id)
         setAgentConversations(history)
         setAgentConversationId(history[0]?.id || '')
+        setThemeMode(mode)
       }
       setStorageStatus('ready')
     }).catch((err) => {
@@ -104,6 +113,12 @@ function EmailApp(): React.JSX.Element {
     const unsubscribeAgent = api.onAgentProgress((progress) => setAgentStatus(progress.detail))
     return () => { unsubscribe(); unsubscribeAgent() }
   }, [api])
+
+  useEffect(() => {
+    if (view !== 'agent' || !activeUser || !accounts.length || overviewShown.current) return
+    overviewShown.current = true
+    void loadOverview()
+  }, [view, activeUser, accounts.length])
 
   useEffect(() => {
     if (!accountId || view !== 'mail') return
@@ -140,11 +155,12 @@ function EmailApp(): React.JSX.Element {
       setLoginPassword('')
       setStorageStatus(session.needsReset ? 'unreadable' : 'ready')
       if (!session.needsReset) {
-        const [items, history] = await Promise.all([api.listAccounts(), api.listAgentConversations()])
+        const [items, history, mode] = await Promise.all([api.listAccounts(), api.listAgentConversations(), api.getThemeMode()])
         setAccounts(items)
         setAccountId(items[0]?.id || '')
         setAgentConversations(history)
         setAgentConversationId(history[0]?.id || '')
+        setThemeMode(mode)
       }
     } catch (err) {
       setError(errorText(err))
@@ -178,6 +194,12 @@ function EmailApp(): React.JSX.Element {
     setAgentBusy(false)
     setAgentStatus('')
     setAgentProposal(null)
+    setOverview(null)
+    setOverviewOpen(false)
+    setOverviewLoading(false)
+    setOverviewError('')
+    overviewShown.current = false
+    setThemeMode('system')
     setFolder('INBOX')
     setView('mail')
     setSettingsOpen(false)
@@ -490,6 +512,35 @@ function EmailApp(): React.JSX.Element {
     }
   }
 
+  async function loadOverview(): Promise<void> {
+    const epoch = sessionEpoch.current
+    setOverviewOpen(true)
+    setOverviewLoading(true)
+    setOverviewError('')
+    try {
+      const result = await api.getAgentOverview()
+      if (epoch === sessionEpoch.current) setOverview(result)
+    } catch (err) {
+      if (epoch === sessionEpoch.current) setOverviewError(errorText(err))
+    } finally {
+      if (epoch === sessionEpoch.current) setOverviewLoading(false)
+    }
+  }
+
+  async function changeTheme(mode: ThemeMode): Promise<void> {
+    const previous = themeMode
+    const epoch = sessionEpoch.current
+    setThemeMode(mode)
+    try {
+      await api.setThemeMode(mode)
+    } catch (err) {
+      if (epoch === sessionEpoch.current) {
+        setThemeMode(previous)
+        setError(errorText(err))
+      }
+    }
+  }
+
   async function confirmAgentActions(proposal: AgentProposal): Promise<void> {
     const epoch = sessionEpoch.current
     try {
@@ -623,7 +674,7 @@ function EmailApp(): React.JSX.Element {
       <button className={`nav-item ${view === 'digest' ? 'active' : ''}`}
         disabled={!accounts.length} onClick={() => { setView('digest'); if (!digest) void createDigest() }}>今日摘要</button>
       <button className={`nav-item ${view === 'agent' ? 'active' : ''}`}
-        disabled={!accounts.length} onClick={() => setView('agent')}>Agent 助手</button>
+        disabled={!accounts.length} onClick={() => setView('agent')}>与邮箱对话</button>
       <div className="sidebar-label">邮箱账户</div>
       {accounts.map((account) => <button key={account.id}
         className={`account-item ${account.id === accountId ? 'active' : ''}`}
@@ -632,6 +683,9 @@ function EmailApp(): React.JSX.Element {
       </button>)}
       <div className="sidebar-bottom">
         <div className="sidebar-user"><span>{activeUser}</span><button onClick={() => void logout()}>退出登录</button></div>
+        <div className="theme-picker"><span>主题</span><Select size="small" value={themeMode}
+          options={[{ label: '跟随系统', value: 'system' }, { label: '亮色', value: 'light' }, { label: '暗色', value: 'dark' }]}
+          onChange={(mode: ThemeMode) => void changeTheme(mode)} /></div>
         <Button onClick={() => { setError(''); setAccountOpen(true) }}>添加邮箱</Button>
         <Button onClick={() => void openSettings()}>AI 设置</Button>
         <Button onClick={() => { setError(''); setUserOpen(true) }}>添加用户</Button>
@@ -646,13 +700,14 @@ function EmailApp(): React.JSX.Element {
     <main className="workspace">
       <header className="topbar">
         <div>
-          <h1>{view === 'agent' ? 'Agent 助手' : view === 'digest' ? '今日摘要' : folder === 'INBOX' ? '收件箱' : '已发送'}</h1>
-          <p>{view === 'agent' ? '查找邮件、起草回复和整理收件箱' : view === 'digest' ? '汇总今天收到的邮件' : activeAccount?.address || '请先添加邮箱账户'}</p>
+          <h1>{view === 'agent' ? '与邮箱对话' : view === 'digest' ? '今日摘要' : folder === 'INBOX' ? '收件箱' : '已发送'}</h1>
+          <p>{view === 'agent' ? '提问后可查看引用的原邮件' : view === 'digest' ? '汇总今天收到的邮件' : activeAccount?.address || '请先添加邮箱账户'}</p>
         </div>
         <div className="topbar-actions">
           {view === 'mail' && <Button onClick={() => setRefreshTick((value) => value + 1)} disabled={!accountId}>刷新</Button>}
           {view === 'digest' && <Button onClick={() => void createDigest()} loading={digestLoading} disabled={!accounts.length}>重新生成</Button>}
           {view === 'agent' && <Button onClick={() => { setAgentConversationId(''); setAgentProposal(null) }}>新对话</Button>}
+          {view === 'agent' && <Button onClick={() => void loadOverview()}>近期概览</Button>}
           <Button onClick={() => void openPrompt()} disabled={!accountId}>一句话写邮件</Button>
           <Button type="primary" onClick={() => newMessage()} disabled={!accountId}>写邮件</Button>
         </div>
@@ -673,7 +728,7 @@ function EmailApp(): React.JSX.Element {
         </div>
         <div className="agent-chat">
           <div className="agent-messages" ref={agentMessagesRef}>
-            {!activeConversation && !agentBusy && <Empty description="输入任务开始对话" />}
+            {!activeConversation && !agentBusy && <Empty description="询问近期邮件，回答会附原文" />}
             {activeConversation?.messages.map((message) => <div key={message.id}
               className={`agent-message ${message.role}`}>
               <div className="agent-message-text">{message.content.split(/(\[\d+\])/g).map((part, index) => {
@@ -687,7 +742,7 @@ function EmailApp(): React.JSX.Element {
               {message.warnings?.map((warning, index) => <div key={index} className="agent-warning">{warning}</div>)}
               {!!message.sources?.length && <div className="agent-sources">
                 {message.sources.map((source, index) => <button key={`${source.accountId}-${source.folder}-${source.uid}-${index}`}
-                  onClick={() => openAgentSource(source)}>[{source.citationNumber || index + 1}] {source.subject} · {source.from}</button>)}
+                  onClick={() => openAgentSource(source)}>[{source.citationNumber || index + 1}] 查看原文：{source.subject} · {source.from}</button>)}
               </div>}
               {message.draft && <Button onClick={() => {
                 setDraft(message.draft!)
@@ -770,6 +825,33 @@ function EmailApp(): React.JSX.Element {
         </div>
       </section>}
     </main>
+
+    <Modal open={overviewOpen} title="最近 30 天邮箱概览" width={760} onCancel={() => setOverviewOpen(false)}
+      footer={<><Button loading={overviewLoading} onClick={() => void loadOverview()}>刷新</Button>
+        <Button type="primary" onClick={() => setOverviewOpen(false)}>开始对话</Button></>} destroyOnHidden>
+      {overviewLoading ? <div className="top-spinner"><Spin /></div> : overviewError ?
+        <Alert type="error" message={overviewError} /> : overview && <>
+          <div className="overview-metrics">
+            <div><span>收到</span><strong>{overview.sampled ? '至少 ' : ''}{overview.received}</strong><span>封</span></div>
+            <div><span>发出</span><strong>{overview.sampled ? '至少 ' : ''}{overview.sent}</strong><span>封</span></div>
+          </div>
+          <div className="overview-people">
+            <div><h3>常见发件人</h3>{overview.topSenders.length ? overview.topSenders.map((item) =>
+              <p key={item.address}>{item.address}<span>{item.count} 封</span></p>) : <span>暂无</span>}</div>
+            <div><h3>常见收件人</h3>{overview.topRecipients.length ? overview.topRecipients.map((item) =>
+              <p key={item.address}>{item.address}<span>{item.count} 封</span></p>) : <span>暂无</span>}</div>
+          </div>
+          <div className="overview-chart"><h3>内容星图 <span>最近最多 20 封</span></h3>
+            {overview.topics.length ? <React.Suspense fallback={<div className="top-spinner"><Spin /></div>}>
+              <RadarChart data={overview.topics} xField="name" yField="count"
+                height={280} theme={dark ? 'classicDark' : 'classic'} />
+            </React.Suspense> :
+              <Empty description="暂无主题分布" />}
+          </div>
+          {overview.sampled && <div className="agent-warning">邮件数量超过检索上限，以上为抽样统计。</div>}
+          {overview.warnings.map((warning, index) => <div key={index} className="agent-warning">{warning}</div>)}
+        </>}
+    </Modal>
 
     <Modal open={accountOpen} title="添加邮箱" footer={null} onCancel={() => setAccountOpen(false)} destroyOnHidden>
       {error && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
@@ -868,4 +950,23 @@ function EmailApp(): React.JSX.Element {
   </div>
 }
 
-createRoot(document.getElementById('root')!).render(<EmailApp />)
+function AppRoot(): React.JSX.Element {
+  const [mode, setMode] = useState<ThemeMode>('system')
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-color-scheme: dark)')
+    const update = (): void => setSystemDark(query.matches)
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+  const dark = mode === 'dark' || (mode === 'system' && systemDark)
+  useEffect(() => {
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+    ConfigProvider.config({ theme: { algorithm: dark ? theme.darkAlgorithm : theme.defaultAlgorithm } })
+  }, [dark])
+  return <ConfigProvider theme={{ algorithm: dark ? theme.darkAlgorithm : theme.defaultAlgorithm }}>
+    <EmailApp themeMode={mode} setThemeMode={setMode} dark={dark} />
+  </ConfigProvider>
+}
+
+createRoot(document.getElementById('root')!).render(<AppRoot />)

@@ -61,8 +61,22 @@ export interface DailyDigest {
 export interface AgentMailRef extends MailSummary {
   accountAddress: string
   uidValidity: string
+  to?: string[]
   citationNumber?: number
   archiveAvailable?: boolean
+}
+
+export type ThemeMode = 'system' | 'light' | 'dark'
+
+export interface MailOverview {
+  since: string
+  received: number
+  sent: number
+  sampled: boolean
+  topSenders: { address: string; count: number }[]
+  topRecipients: { address: string; count: number }[]
+  topics: { name: string; count: number }[]
+  warnings: string[]
 }
 
 export type AgentActionKind = 'markRead' | 'markUnread' | 'archive'
@@ -148,4 +162,7 @@ export interface DesktopApi {
   confirmAgentProposal(proposalId: string): Promise<AgentConfirmResult>
   clearAgentHistory(): Promise<void>
   onAgentProgress(listener: (progress: AgentProgress) => void): () => void
+  getAgentOverview(): Promise<MailOverview>
+  getThemeMode(): Promise<ThemeMode>
+  setThemeMode(mode: ThemeMode): Promise<void>
 }

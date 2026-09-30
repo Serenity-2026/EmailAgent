@@ -13,10 +13,11 @@
     "package:mac": "npm run build && electron-builder --mac dir --publish never"
   },
   "dependencies": {
+    "@ant-design/plots": "2.6.8",
     "antd": "6.6.5",
     "dompurify": "3.4.15",
     "imapflow": "2.1.2",
-    "mailparser": "3.9.3",
+    "mailparser": "3.9.32",
     "nodemailer": "10.0.13",
     "react": "19.2.1",
     "react-dom": "19.2.1"

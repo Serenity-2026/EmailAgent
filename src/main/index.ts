@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell } from 'electron'
 import type {
-  AccountInput, AgentConfirmResult, AgentConversation, AgentMessage, AiSettingsInput, DailyDigest, MailDraft
+  AccountInput, AgentConfirmResult, AgentConversation, AgentMessage, AiSettingsInput, DailyDigest, MailDraft, ThemeMode
 } from '../shared/models'
 import { generateDigest as summarize, generateDraft, listAiModels, resolveAiKey, testAiConnection, validateAiSettings } from './ai'
 import { runAgentTask } from './agent'
 import { AgentProposalRegistry, executeConfirmedActions } from './agent-proposals'
+import { getMailOverview } from './mail-overview'
 import { executeAgentAction, getMail, getSentFolder, listMail, sendMail, testAccount, todayMail } from './mail'
 import { validateAccount } from './providers'
 import { Store, type StoredAccount } from './store'
@@ -61,10 +62,15 @@ async function digestFor(accountIds: string[]): Promise<DailyDigest> {
 
 function registerIpc(): void {
   ipcMain.handle('auth:session', () => ({ username: store.activeUsername, needsReset: store.needsReset }))
-  ipcMain.handle('auth:login', (_event, username: string, password: string) => store.login(username, password))
+  ipcMain.handle('auth:login', async (_event, username: string, password: string) => {
+    const result = await store.login(username, password)
+    nativeTheme.themeSource = result.needsReset ? 'system' : store.themeMode
+    return result
+  })
   ipcMain.handle('auth:logout', () => {
     store.logout()
     agentProposals.clear()
+    nativeTheme.themeSource = 'system'
   })
   ipcMain.handle('auth:create', (_event, username: string, password: string) => store.addUser(username, password))
   ipcMain.handle('auth:password', (_event, currentPassword: string, nextPassword: string) =>
@@ -156,6 +162,18 @@ function registerIpc(): void {
   })
   ipcMain.handle('ai:digest', (_event, accountIds: string[]) => digestFor(accountIds))
   ipcMain.handle('agent:history', () => store.agentConversations)
+  ipcMain.handle('agent:overview', async (event) => {
+    if (event.senderFrame !== window?.webContents.mainFrame) throw new Error('请求来源无效')
+    const version = store.sessionVersion
+    return getMailOverview([...store.accounts], store.ai, () => requireSession(version))
+  })
+  ipcMain.handle('theme:get', () => store.themeMode)
+  ipcMain.handle('theme:set', async (_event, mode: ThemeMode) => {
+    const version = store.sessionVersion
+    await store.setThemeMode(mode)
+    requireSession(version)
+    nativeTheme.themeSource = mode
+  })
   ipcMain.handle('agent:run', async (event, prompt: string, conversationId?: string) => {
     if (event.senderFrame !== window?.webContents.mainFrame) throw new Error('请求来源无效')
     const version = store.sessionVersion

@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scryptSync, 
 import { readFile, writeFile, rename, chmod, copyFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { safeStorage } from 'electron'
-import type { Account, AgentConversation, AiSettingsInput } from '../shared/models'
+import type { Account, AgentConversation, AiSettingsInput, ThemeMode } from '../shared/models'
 
 export interface StoredAccount extends Account {
   authorizationCode: string
@@ -12,6 +12,7 @@ interface StoredData {
   accounts: StoredAccount[]
   ai: AiSettingsInput
   agentConversations?: AgentConversation[]
+  themeMode?: ThemeMode
 }
 
 interface UserVault {
@@ -30,7 +31,8 @@ interface VaultFile {
 const emptyData = (): StoredData => ({
   accounts: [],
   ai: { baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false },
-  agentConversations: []
+  agentConversations: [],
+  themeMode: 'system'
 })
 
 function currentConversations(items: unknown): AgentConversation[] {
@@ -276,6 +278,19 @@ export class Store {
   get agentConversations(): AgentConversation[] {
     this.ensureReady()
     return currentConversations(this.data.agentConversations || [])
+  }
+
+  get themeMode(): ThemeMode {
+    this.ensureReady()
+    return this.data.themeMode === 'light' || this.data.themeMode === 'dark' ? this.data.themeMode : 'system'
+  }
+
+  async setThemeMode(themeMode: ThemeMode): Promise<void> {
+    if (themeMode !== 'system' && themeMode !== 'light' && themeMode !== 'dark') throw new Error('主题选项无效')
+    const version = this.session
+    const next = { ...this.data, themeMode }
+    await this.save(next)
+    if (this.session === version) this.data = next
   }
 
   async setAccounts(accounts: StoredAccount[]): Promise<void> {

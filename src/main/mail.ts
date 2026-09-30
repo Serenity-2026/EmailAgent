@@ -237,7 +237,8 @@ export async function searchAgentMail(account: StoredAccount, filters: AgentSear
             uid: true, envelope: true, flags: true, internalDate: true
           }, { uid: true })
           matches.push(...messages.map((message) => ({
-            ...summaryOf(account, path, message), accountAddress: account.address, uidValidity, archiveAvailable
+            ...summaryOf(account, path, message), accountAddress: account.address, uidValidity, archiveAvailable,
+            to: message.envelope?.to?.flatMap((recipient) => recipient.address ? [recipient.address] : []) || []
           })))
           searchedFolders.push(path)
         } finally {
