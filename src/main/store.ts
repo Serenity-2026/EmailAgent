@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scryptSync, 
 import { readFile, writeFile, rename, chmod, copyFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { safeStorage } from 'electron'
-import type { Account, AiSettingsInput } from '../shared/models'
+import type { Account, AgentConversation, AiSettingsInput } from '../shared/models'
 
 export interface StoredAccount extends Account {
   authorizationCode: string
@@ -11,6 +11,7 @@ export interface StoredAccount extends Account {
 interface StoredData {
   accounts: StoredAccount[]
   ai: AiSettingsInput
+  agentConversations?: AgentConversation[]
 }
 
 interface UserVault {
@@ -28,8 +29,22 @@ interface VaultFile {
 
 const emptyData = (): StoredData => ({
   accounts: [],
-  ai: { baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false }
+  ai: { baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false },
+  agentConversations: []
 })
+
+function currentConversations(items: unknown): AgentConversation[] {
+  if (!Array.isArray(items)) return []
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
+  return (items as AgentConversation[]).filter((item) => item && typeof item.id === 'string' &&
+    typeof item.updatedAt === 'string' && Array.isArray(item.messages) &&
+    Number.isFinite(Date.parse(item.updatedAt)) && Date.parse(item.updatedAt) >= cutoff)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 30)
+    .map((item) => ({ ...item, messages: item.messages.filter((message) =>
+      typeof message.createdAt === 'string' && Number.isFinite(Date.parse(message.createdAt)) &&
+      Date.parse(message.createdAt) >= cutoff).slice(-40) }))
+    .filter((item) => item.messages.length > 0)
+}
 
 function isStoredData(value: unknown): value is StoredData {
   if (!value || typeof value !== 'object') return false
@@ -138,6 +153,10 @@ export class Store {
       this.salt = vault.salt
       this.key = key
       this.data = data
+      const retained = currentConversations(data.agentConversations)
+      if (JSON.stringify(retained) !== JSON.stringify(data.agentConversations || [])) {
+        await this.setAgentConversations(retained)
+      }
       return { username: name, needsReset: false }
     }
 
@@ -254,6 +273,11 @@ export class Store {
     return this.data.ai
   }
 
+  get agentConversations(): AgentConversation[] {
+    this.ensureReady()
+    return currentConversations(this.data.agentConversations || [])
+  }
+
   async setAccounts(accounts: StoredAccount[]): Promise<void> {
     const version = this.session
     const next = { ...this.data, accounts }
@@ -264,6 +288,13 @@ export class Store {
   async setAi(ai: AiSettingsInput): Promise<void> {
     const version = this.session
     const next = { ...this.data, ai }
+    await this.save(next)
+    if (this.session === version) this.data = next
+  }
+
+  async setAgentConversations(agentConversations: AgentConversation[]): Promise<void> {
+    const version = this.session
+    const next = { ...this.data, agentConversations: currentConversations(agentConversations) }
     await this.save(next)
     if (this.session === version) this.data = next
   }

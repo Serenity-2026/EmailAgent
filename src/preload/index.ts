@@ -22,7 +22,7 @@ const api: DesktopApi = {
   addAccount: (input) => invoke('accounts:add', input),
   removeAccount: (id) => invoke('accounts:remove', id),
   listMail: (accountId, folder) => invoke('mail:list', accountId, folder),
-  getMail: (accountId, folder, uid) => invoke('mail:get', accountId, folder, uid),
+  getMail: (accountId, folder, uid, markRead) => invoke('mail:get', accountId, folder, uid, markRead),
   openExternalLink: (url) => invoke('mail:open-link', url),
   getSentFolder: (accountId) => invoke('mail:sent-folder', accountId),
   sendMail: (draft) => invoke('mail:send', draft),
@@ -36,6 +36,15 @@ const api: DesktopApi = {
     const handler = (_event: Electron.IpcRendererEvent, digest: DailyDigest): void => listener(digest)
     ipcRenderer.on('ai:digest:ready', handler)
     return () => ipcRenderer.removeListener('ai:digest:ready', handler)
+  },
+  listAgentConversations: () => invoke('agent:history'),
+  runAgent: (prompt, conversationId) => invoke('agent:run', prompt, conversationId),
+  confirmAgentProposal: (proposalId) => invoke('agent:confirm', proposalId),
+  clearAgentHistory: () => invoke('agent:clear'),
+  onAgentProgress: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, progress: Parameters<typeof listener>[0]): void => listener(progress)
+    ipcRenderer.on('agent:progress', handler)
+    return () => ipcRenderer.removeListener('agent:progress', handler)
   }
 }
 

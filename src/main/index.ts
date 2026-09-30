@@ -1,9 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
-import type { AccountInput, AiSettingsInput, DailyDigest, MailDraft } from '../shared/models'
+import type {
+  AccountInput, AgentConfirmResult, AgentConversation, AgentMessage, AiSettingsInput, DailyDigest, MailDraft
+} from '../shared/models'
 import { generateDigest as summarize, generateDraft, listAiModels, resolveAiKey, testAiConnection, validateAiSettings } from './ai'
-import { getMail, getSentFolder, listMail, sendMail, testAccount, todayMail } from './mail'
+import { runAgentTask } from './agent'
+import { AgentProposalRegistry, executeConfirmedActions } from './agent-proposals'
+import { executeAgentAction, getMail, getSentFolder, listMail, sendMail, testAccount, todayMail } from './mail'
 import { validateAccount } from './providers'
 import { Store, type StoredAccount } from './store'
 
@@ -11,6 +15,8 @@ let window: BrowserWindow | null = null
 let store: Store
 let dailyAttempt = ''
 let initialized = false
+let runningAgentVersion: number | null = null
+const agentProposals = new AgentProposalRegistry()
 const ownsInstance = app.requestSingleInstanceLock()
 
 if (!ownsInstance) app.quit()
@@ -56,7 +62,10 @@ async function digestFor(accountIds: string[]): Promise<DailyDigest> {
 function registerIpc(): void {
   ipcMain.handle('auth:session', () => ({ username: store.activeUsername, needsReset: store.needsReset }))
   ipcMain.handle('auth:login', (_event, username: string, password: string) => store.login(username, password))
-  ipcMain.handle('auth:logout', () => store.logout())
+  ipcMain.handle('auth:logout', () => {
+    store.logout()
+    agentProposals.clear()
+  })
   ipcMain.handle('auth:create', (_event, username: string, password: string) => store.addUser(username, password))
   ipcMain.handle('auth:password', (_event, currentPassword: string, nextPassword: string) =>
     store.changePassword(currentPassword, nextPassword))
@@ -97,9 +106,10 @@ function registerIpc(): void {
     requireSession(version)
     return result
   })
-  ipcMain.handle('mail:get', async (_event, accountId: string, folder: string, uid: number) => {
+  ipcMain.handle('mail:get', async (_event, accountId: string, folder: string, uid: number, markRead = true) => {
+    if (typeof markRead !== 'boolean') throw new Error('阅读选项无效')
     const version = store.sessionVersion
-    const result = await getMail(accountById(accountId), folder, uid)
+    const result = await getMail(accountById(accountId), folder, uid, markRead)
     requireSession(version)
     return result
   })
@@ -145,6 +155,69 @@ function registerIpc(): void {
     return draft
   })
   ipcMain.handle('ai:digest', (_event, accountIds: string[]) => digestFor(accountIds))
+  ipcMain.handle('agent:history', () => store.agentConversations)
+  ipcMain.handle('agent:run', async (event, prompt: string, conversationId?: string) => {
+    if (event.senderFrame !== window?.webContents.mainFrame) throw new Error('请求来源无效')
+    const version = store.sessionVersion
+    if (runningAgentVersion === version) throw new Error('Agent 正在处理上一项任务')
+    const accounts = [...store.accounts]
+    const existing = conversationId ? store.agentConversations.find((item) => item.id === conversationId) : undefined
+    if (conversationId && !existing) throw new Error('对话不存在或已过期')
+    runningAgentVersion = version
+    try {
+      const result = await runAgentTask(store.ai, prompt, accounts, existing, (progress) => {
+        if (store.sessionVersion === version) window?.webContents.send('agent:progress', progress)
+      }, () => requireSession(version))
+      requireSession(version)
+      const createdAt = new Date().toISOString()
+      const id = existing?.id || randomUUID()
+      const messages: AgentMessage[] = [
+        ...(existing?.messages || []),
+        { id: randomUUID(), role: 'user', content: prompt.trim(), createdAt },
+        { id: randomUUID(), role: 'assistant', content: result.answer, createdAt,
+          sources: result.sources, draft: result.draft, scope: result.scope,
+          truncated: result.truncated, warnings: result.warnings }
+      ]
+      const conversation: AgentConversation = { id, updatedAt: createdAt, messages }
+      await store.setAgentConversations([conversation, ...store.agentConversations.filter((item) => item.id !== id)])
+      requireSession(version)
+      const proposal = result.actions.length ? agentProposals.create(version, id, result.actions) : undefined
+      return { conversation, scope: result.scope, truncated: result.truncated, warnings: result.warnings, proposal }
+    } finally {
+      if (runningAgentVersion === version) runningAgentVersion = null
+    }
+  })
+  ipcMain.handle('agent:confirm', async (event, proposalId: string): Promise<AgentConfirmResult> => {
+    if (event.senderFrame !== window?.webContents.mainFrame || typeof proposalId !== 'string') throw new Error('请求来源无效')
+    const version = store.sessionVersion
+    const proposal = agentProposals.take(proposalId, version)
+    requireSession(version)
+    const results = await executeConfirmedActions(proposal.actions,
+      (action) => executeAgentAction(accountById(action.mail.accountId), action),
+      () => requireSession(version))
+    const conversation = store.agentConversations.find((item) => item.id === proposal.conversationId)
+    let historySaved = Boolean(conversation)
+    if (conversation) {
+      const success = results.filter((item) => item.success).length
+      const message: AgentMessage = {
+        id: randomUUID(), role: 'assistant', createdAt: new Date().toISOString(),
+        content: `整理完成：成功 ${success} 项，失败 ${results.length - success} 项。`,
+        sources: results.map((item) => item.mail), actionResults: results
+      }
+      try {
+        await store.setAgentConversations([{ ...conversation, updatedAt: message.createdAt,
+          messages: [...conversation.messages, message] }, ...store.agentConversations.filter((item) => item.id !== conversation.id)])
+      } catch {
+        historySaved = false
+      }
+    }
+    return { results, historySaved }
+  })
+  ipcMain.handle('agent:clear', async () => {
+    if (runningAgentVersion === store.sessionVersion) throw new Error('请等待当前任务完成')
+    await store.setAgentConversations([])
+    agentProposals.clear()
+  })
 }
 
 function createWindow(): void {

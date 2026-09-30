@@ -3,7 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { Alert, Button, Empty, Input, Modal, Select, Spin, Switch } from 'antd'
 import 'antd/dist/reset.css'
 import type {
-  Account, AccountInput, AiSettingsInput, DailyDigest, DesktopApi, MailDetail, MailDraft, MailSummary, Provider
+  Account, AccountInput, AgentConversation, AgentMessage, AgentProposal, AiSettingsInput, DailyDigest, DesktopApi,
+  MailDetail, MailDraft, MailSummary, Provider
 } from '../../shared/models'
 import { MailHtmlView } from './mail-html'
 import './styles.css'
@@ -23,7 +24,7 @@ function EmailApp(): React.JSX.Element {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [accountId, setAccountId] = useState('')
   const [folder, setFolder] = useState('INBOX')
-  const [view, setView] = useState<'mail' | 'digest'>('mail')
+  const [view, setView] = useState<'mail' | 'digest' | 'agent'>('mail')
   const [mails, setMails] = useState<MailSummary[]>([])
   const [selected, setSelected] = useState<MailSummary | null>(null)
   const [detail, setDetail] = useState<MailDetail | null>(null)
@@ -32,6 +33,12 @@ function EmailApp(): React.JSX.Element {
   const [refreshTick, setRefreshTick] = useState(0)
   const [digest, setDigest] = useState<DailyDigest | null>(null)
   const [digestLoading, setDigestLoading] = useState(false)
+  const [agentConversations, setAgentConversations] = useState<AgentConversation[]>([])
+  const [agentConversationId, setAgentConversationId] = useState('')
+  const [agentPrompt, setAgentPrompt] = useState('')
+  const [agentBusy, setAgentBusy] = useState(false)
+  const [agentStatus, setAgentStatus] = useState('')
+  const [agentProposal, setAgentProposal] = useState<AgentProposal | null>(null)
   const [error, setError] = useState('')
   const [activeUser, setActiveUser] = useState<string | null>(null)
   const [loginName, setLoginName] = useState('dmc')
@@ -67,7 +74,8 @@ function EmailApp(): React.JSX.Element {
   const [composePreview, setComposePreview] = useState(false)
   const [composeBusy, setComposeBusy] = useState(false)
   const [draft, setDraft] = useState<MailDraft>(emptyDraft(''))
-  const pendingSource = useRef<MailSummary | null>(null)
+  const pendingSource = useRef<{ mail: MailSummary; markRead: boolean } | null>(null)
+  const agentMessagesRef = useRef<HTMLDivElement>(null)
   const sessionEpoch = useRef(0)
 
   useEffect(() => {
@@ -78,9 +86,11 @@ function EmailApp(): React.JSX.Element {
         return
       }
       if (username) {
-        const items = await api.listAccounts()
+        const [items, history] = await Promise.all([api.listAccounts(), api.listAgentConversations()])
         setAccounts(items)
         if (items.length) setAccountId(items[0].id)
+        setAgentConversations(history)
+        setAgentConversationId(history[0]?.id || '')
       }
       setStorageStatus('ready')
     }).catch((err) => {
@@ -91,7 +101,8 @@ function EmailApp(): React.JSX.Element {
       setDigest(result)
       setView('digest')
     })
-    return unsubscribe
+    const unsubscribeAgent = api.onAgentProgress((progress) => setAgentStatus(progress.detail))
+    return () => { unsubscribe(); unsubscribeAgent() }
   }, [api])
 
   useEffect(() => {
@@ -104,9 +115,9 @@ function EmailApp(): React.JSX.Element {
       if (!cancelled) {
         setMails(items)
         const source = pendingSource.current
-        if (source && source.accountId === accountId && source.folder === folder) {
+        if (source && source.mail.accountId === accountId && source.mail.folder === folder) {
           pendingSource.current = null
-          void openMail(source)
+          void openMail(source.mail, source.markRead)
         }
       }
     }).catch((err) => {
@@ -129,9 +140,11 @@ function EmailApp(): React.JSX.Element {
       setLoginPassword('')
       setStorageStatus(session.needsReset ? 'unreadable' : 'ready')
       if (!session.needsReset) {
-        const items = await api.listAccounts()
+        const [items, history] = await Promise.all([api.listAccounts(), api.listAgentConversations()])
         setAccounts(items)
         setAccountId(items[0]?.id || '')
+        setAgentConversations(history)
+        setAgentConversationId(history[0]?.id || '')
       }
     } catch (err) {
       setError(errorText(err))
@@ -159,6 +172,12 @@ function EmailApp(): React.JSX.Element {
     setDetailLoading(false)
     setDigest(null)
     setDigestLoading(false)
+    setAgentConversations([])
+    setAgentConversationId('')
+    setAgentPrompt('')
+    setAgentBusy(false)
+    setAgentStatus('')
+    setAgentProposal(null)
     setFolder('INBOX')
     setView('mail')
     setSettingsOpen(false)
@@ -228,16 +247,16 @@ function EmailApp(): React.JSX.Element {
     }
   }
 
-  async function openMail(mail: MailSummary): Promise<void> {
+  async function openMail(mail: MailSummary, markRead = true): Promise<void> {
     const epoch = sessionEpoch.current
     setSelected(mail)
     setDetail(null)
     setDetailLoading(true)
     try {
-      const result = await api.getMail(mail.accountId, mail.folder, mail.uid)
+      const result = await api.getMail(mail.accountId, mail.folder, mail.uid, markRead)
       if (epoch !== sessionEpoch.current) return
       setDetail(result)
-      setMails((items) => items.map((item) => item.uid === mail.uid ? { ...item, unread: false } : item))
+      if (markRead) setMails((items) => items.map((item) => item.uid === mail.uid ? { ...item, unread: false } : item))
     } catch (err) {
       if (epoch === sessionEpoch.current) setError(errorText(err))
     } finally {
@@ -447,12 +466,94 @@ function EmailApp(): React.JSX.Element {
     }
   }
 
+  async function runAgent(): Promise<void> {
+    if (!agentPrompt.trim() || !await ensureAiConfigured()) return
+    const epoch = sessionEpoch.current
+    setAgentBusy(true)
+    setAgentStatus('正在理解任务')
+    setAgentProposal(null)
+    setError('')
+    try {
+      const result = await api.runAgent(agentPrompt, agentConversationId || undefined)
+      if (epoch !== sessionEpoch.current) return
+      setAgentConversations((current) => [result.conversation, ...current.filter((item) => item.id !== result.conversation.id)])
+      setAgentConversationId(result.conversation.id)
+      setAgentProposal(result.proposal || null)
+      setAgentPrompt('')
+    } catch (err) {
+      if (epoch === sessionEpoch.current) setError(errorText(err))
+    } finally {
+      if (epoch === sessionEpoch.current) {
+        setAgentBusy(false)
+        setAgentStatus('')
+      }
+    }
+  }
+
+  async function confirmAgentActions(proposal: AgentProposal): Promise<void> {
+    const epoch = sessionEpoch.current
+    try {
+      const outcome = await api.confirmAgentProposal(proposal.id)
+      if (epoch !== sessionEpoch.current) return
+      if (outcome.historySaved) {
+        const history = await api.listAgentConversations()
+        if (epoch !== sessionEpoch.current) return
+        setAgentConversations(history)
+      } else {
+        const message: AgentMessage = {
+          id: crypto.randomUUID(), role: 'assistant', createdAt: new Date().toISOString(),
+          content: '整理已执行，但操作记录未能保存。', actionResults: outcome.results
+        }
+        setAgentConversations((current) => current.map((item) => item.id === agentConversationId
+          ? { ...item, messages: [...item.messages, message] } : item))
+        setError('整理已执行，但操作记录未能保存')
+      }
+      setAgentProposal(null)
+      if (outcome.results.some((item) => item.success)) setRefreshTick((value) => value + 1)
+    } catch (err) {
+      if (epoch === sessionEpoch.current) {
+        setAgentProposal(null)
+        setError(errorText(err))
+      }
+      throw err
+    }
+  }
+
+  function clearAgentHistory(): void {
+    Modal.confirm({
+      title: '清除 Agent 对话记录？',
+      content: '当前用户保存的对话、引用与操作记录将被清除。',
+      okText: '清除', cancelText: '取消', okButtonProps: { danger: true },
+      onOk: async () => {
+        await api.clearAgentHistory()
+        setAgentConversations([])
+        setAgentConversationId('')
+        setAgentProposal(null)
+      }
+    })
+  }
+
   function openDigestSource(source: MailSummary): void {
-    pendingSource.current = source
+    pendingSource.current = { mail: source, markRead: true }
     setAccountId(source.accountId)
     setFolder(source.folder)
     setView('mail')
   }
+
+  function openAgentSource(source: MailSummary): void {
+    pendingSource.current = { mail: source, markRead: false }
+    setAccountId(source.accountId)
+    setFolder(source.folder)
+    setView('mail')
+  }
+
+  const activeConversation = agentConversations.find((item) => item.id === agentConversationId)
+
+  useEffect(() => {
+    if (view === 'agent' && agentMessagesRef.current) {
+      agentMessagesRef.current.scrollTop = agentMessagesRef.current.scrollHeight
+    }
+  }, [view, agentConversationId, activeConversation?.messages.length, agentStatus])
 
   async function retryStorage(): Promise<void> {
     setStorageBusy(true)
@@ -521,6 +622,8 @@ function EmailApp(): React.JSX.Element {
         disabled={!accountId} onClick={() => void showSent()}>已发送</button>
       <button className={`nav-item ${view === 'digest' ? 'active' : ''}`}
         disabled={!accounts.length} onClick={() => { setView('digest'); if (!digest) void createDigest() }}>今日摘要</button>
+      <button className={`nav-item ${view === 'agent' ? 'active' : ''}`}
+        disabled={!accounts.length} onClick={() => setView('agent')}>Agent 助手</button>
       <div className="sidebar-label">邮箱账户</div>
       {accounts.map((account) => <button key={account.id}
         className={`account-item ${account.id === accountId ? 'active' : ''}`}
@@ -543,12 +646,13 @@ function EmailApp(): React.JSX.Element {
     <main className="workspace">
       <header className="topbar">
         <div>
-          <h1>{view === 'digest' ? '今日摘要' : folder === 'INBOX' ? '收件箱' : '已发送'}</h1>
-          <p>{view === 'digest' ? '汇总今天收到的邮件' : activeAccount?.address || '请先添加邮箱账户'}</p>
+          <h1>{view === 'agent' ? 'Agent 助手' : view === 'digest' ? '今日摘要' : folder === 'INBOX' ? '收件箱' : '已发送'}</h1>
+          <p>{view === 'agent' ? '查找邮件、起草回复和整理收件箱' : view === 'digest' ? '汇总今天收到的邮件' : activeAccount?.address || '请先添加邮箱账户'}</p>
         </div>
         <div className="topbar-actions">
           {view === 'mail' && <Button onClick={() => setRefreshTick((value) => value + 1)} disabled={!accountId}>刷新</Button>}
           {view === 'digest' && <Button onClick={() => void createDigest()} loading={digestLoading} disabled={!accounts.length}>重新生成</Button>}
+          {view === 'agent' && <Button onClick={() => { setAgentConversationId(''); setAgentProposal(null) }}>新对话</Button>}
           <Button onClick={() => void openPrompt()} disabled={!accountId}>一句话写邮件</Button>
           <Button type="primary" onClick={() => newMessage()} disabled={!accountId}>写邮件</Button>
         </div>
@@ -557,7 +661,73 @@ function EmailApp(): React.JSX.Element {
       {error && <div className="error-wrap"><Alert type="error" message={error} closable onClose={() => setError('')} /></div>}
       {storageBackup && <div className="error-wrap"><Alert type="success" message="旧加密文件已备份" description={storageBackup} closable onClose={() => setStorageBackup('')} /></div>}
 
-      {view === 'digest' ? <section className="digest-view">
+      {view === 'agent' ? <section className="agent-layout">
+        <div className="agent-history">
+          <div className="agent-history-head"><span>对话记录</span><button onClick={clearAgentHistory}
+            disabled={!agentConversations.length || agentBusy}>清除</button></div>
+          {agentConversations.map((conversation) => <button key={conversation.id}
+            className={`agent-history-item ${conversation.id === agentConversationId ? 'active' : ''}`}
+            onClick={() => { setAgentConversationId(conversation.id); setAgentProposal(null) }}>
+            {conversation.messages.find((message) => message.role === 'user')?.content || '新对话'}
+          </button>)}
+        </div>
+        <div className="agent-chat">
+          <div className="agent-messages" ref={agentMessagesRef}>
+            {!activeConversation && !agentBusy && <Empty description="输入任务开始对话" />}
+            {activeConversation?.messages.map((message) => <div key={message.id}
+              className={`agent-message ${message.role}`}>
+              <div className="agent-message-text">{message.content.split(/(\[\d+\])/g).map((part, index) => {
+                const number = /^\[(\d+)\]$/.exec(part)?.[1]
+                const source = message.sources?.find((item) => item.citationNumber === Number(number))
+                return source ? <button key={index} className="agent-inline-source"
+                  onClick={() => openAgentSource(source)}>{part}</button> : part
+              })}</div>
+              {message.scope && <div className="agent-scope">检索范围：{message.scope}</div>}
+              {message.truncated && <div className="agent-limit">结果较多，仅分析了最近的部分邮件。请缩小检索条件。</div>}
+              {message.warnings?.map((warning, index) => <div key={index} className="agent-warning">{warning}</div>)}
+              {!!message.sources?.length && <div className="agent-sources">
+                {message.sources.map((source, index) => <button key={`${source.accountId}-${source.folder}-${source.uid}-${index}`}
+                  onClick={() => openAgentSource(source)}>[{source.citationNumber || index + 1}] {source.subject} · {source.from}</button>)}
+              </div>}
+              {message.draft && <Button onClick={() => {
+                setDraft(message.draft!)
+                setComposePreview(false)
+                setComposeOpen(true)
+              }}>打开回复草稿</Button>}
+              {message.actionResults?.map((result, index) => <div key={index}
+                className={result.success ? 'agent-action-ok' : 'agent-warning'}>
+                {result.success ? '已完成' : '失败'}：{result.mail.subject} ·
+                {result.kind === 'archive' ? '归档' : result.kind === 'markRead' ? '标记已读' : '标记未读'}
+                {result.error ? `（${result.error}）` : ''}
+              </div>)}
+            </div>)}
+            {agentBusy && <div className="agent-progress"><Spin size="small" />{agentStatus}</div>}
+            {agentProposal && <div className="agent-proposal">
+              <strong>待确认的整理操作</strong>
+              {agentProposal.actions.map((action, index) => <div key={index}>
+                {action.kind === 'archive' ? '归档' : action.kind === 'markRead' ? '标记已读' : '标记未读'} ·
+                {action.mail.subject} · {action.mail.from} · {action.mail.accountAddress}
+              </div>)}
+              <Button type="primary" onClick={() => Modal.confirm({
+                title: '确认整理这些邮件？',
+                content: <div className="agent-confirm-list">{agentProposal.actions.map((action, index) => <div key={index}>
+                  {action.kind === 'archive' ? '归档' : action.kind === 'markRead' ? '标记已读' : '标记未读'} ·
+                  {action.mail.subject} · {action.mail.accountAddress}
+                </div>)}</div>,
+                okText: '确认执行', cancelText: '取消',
+                onOk: () => confirmAgentActions(agentProposal)
+              })}>确认整理</Button>
+            </div>}
+          </div>
+          <div className="agent-compose">
+            <Input.TextArea value={agentPrompt} rows={3} maxLength={1000}
+              placeholder="例如：找出最近导师关于课程报告的邮件，总结待办并起草回复"
+              onChange={(event) => setAgentPrompt(event.target.value)} />
+            <Button type="primary" loading={agentBusy} disabled={!agentPrompt.trim() || !accounts.length}
+              onClick={() => void runAgent()}>执行任务</Button>
+          </div>
+        </div>
+      </section> : view === 'digest' ? <section className="digest-view">
         <div className="digest-card">
           <h2>{digest?.date || '今日'}邮件摘要</h2>
           {digestLoading ? <div className="top-spinner"><Spin /></div> : digest ? <>

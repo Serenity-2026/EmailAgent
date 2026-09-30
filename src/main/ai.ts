@@ -42,7 +42,7 @@ export async function listAiModels(baseUrl: string, apiKey: string): Promise<str
   return [...new Set(models)].sort((a, b) => a.localeCompare(b))
 }
 
-async function complete(settings: AiSettingsInput, system: string, user: string): Promise<string> {
+export async function complete(settings: AiSettingsInput, system: string, user: string): Promise<string> {
   validateAiSettings(settings)
   const endpoint = `${settings.baseUrl.replace(/\/+$/, '')}/chat/completions`
   const response = await fetch(endpoint, {
@@ -111,8 +111,10 @@ export async function generateDigest(
   date: string,
   messages: MailDetail[]
 ): Promise<DailyDigest> {
-  const sources = messages.map(({ text: _text, to: _to, messageId: _messageId,
-    references: _references, attachmentNames: _attachmentNames, ...summary }) => summary)
+  const sources = messages.map((mail) => ({
+    uid: mail.uid, accountId: mail.accountId, folder: mail.folder, from: mail.from,
+    subject: mail.subject, date: mail.date, unread: mail.unread
+  }))
   if (messages.length === 0) {
     return { date, content: '今天暂无新邮件。', sources: [] }
   }

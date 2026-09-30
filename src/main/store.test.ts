@@ -72,6 +72,34 @@ describe('local user vault', () => {
     expect(backups).toHaveLength(1)
     expect(await readFile(join(directory, backups[0]), 'utf8')).toBe(original)
     expect(JSON.parse(await readFile(path, 'utf8')).version).toBe(2)
+    expect(store.agentConversations).toEqual([])
+  })
+
+  it('encrypts Agent history per user and drops conversations older than 30 days', async () => {
+    const { directory, path } = await fixture()
+    const store = new Store(directory)
+    await store.load()
+    await store.login('dmc', '123456')
+    const recent = new Date().toISOString()
+    const old = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString()
+    await store.setAgentConversations([
+      { id: 'recent', updatedAt: recent, messages: [
+        { id: 'm0', role: 'user', content: '过期消息', createdAt: old },
+        { id: 'm1', role: 'user', content: '帮我找课程邮件', createdAt: recent }
+      ] },
+      { id: 'old', updatedAt: old, messages: [{ id: 'm2', role: 'user',
+        content: '过期对话', createdAt: old }] }
+    ])
+    expect(store.agentConversations.map((item) => item.id)).toEqual(['recent'])
+    expect(store.agentConversations[0].messages.map((item) => item.id)).toEqual(['m1'])
+    expect(await readFile(path, 'utf8')).not.toContain('帮我找课程邮件')
+    await store.addUser('other', 'secret-123')
+    store.logout()
+    await store.login('other', 'secret-123')
+    expect(store.agentConversations).toEqual([])
+    store.logout()
+    await store.login('dmc', '123456')
+    expect(store.agentConversations[0].messages[0].content).toBe('帮我找课程邮件')
   })
 
   it('keeps unreadable legacy data until the user chooses a backup and reset', async () => {

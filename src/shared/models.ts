@@ -37,7 +37,7 @@ export interface MailDraft {
   to: string
   subject: string
   text: string
-  replyTo?: { uid: number; folder: string }
+  replyTo?: { uid: number; folder: string; uidValidity?: string }
 }
 
 export interface AiSettingsInput {
@@ -58,6 +58,68 @@ export interface DailyDigest {
   sources: MailSummary[]
 }
 
+export interface AgentMailRef extends MailSummary {
+  accountAddress: string
+  uidValidity: string
+  citationNumber?: number
+  archiveAvailable?: boolean
+}
+
+export type AgentActionKind = 'markRead' | 'markUnread' | 'archive'
+
+export interface AgentAction {
+  kind: AgentActionKind
+  mail: AgentMailRef
+}
+
+export interface AgentActionResult extends AgentAction {
+  success: boolean
+  error?: string
+}
+
+export interface AgentMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: string
+  sources?: AgentMailRef[]
+  draft?: MailDraft
+  actionResults?: AgentActionResult[]
+  scope?: string
+  truncated?: boolean
+  warnings?: string[]
+}
+
+export interface AgentConversation {
+  id: string
+  updatedAt: string
+  messages: AgentMessage[]
+}
+
+export interface AgentProposal {
+  id: string
+  actions: AgentAction[]
+  expiresAt: string
+}
+
+export interface AgentRunResult {
+  conversation: AgentConversation
+  scope: string
+  truncated: boolean
+  warnings: string[]
+  proposal?: AgentProposal
+}
+
+export interface AgentConfirmResult {
+  results: AgentActionResult[]
+  historySaved: boolean
+}
+
+export interface AgentProgress {
+  stage: 'planning' | 'searching' | 'reading' | 'answering'
+  detail: string
+}
+
 export interface DesktopApi {
   getSession(): Promise<{ username: string | null; needsReset: boolean }>
   login(username: string, password: string): Promise<{ username: string; needsReset: boolean }>
@@ -70,7 +132,7 @@ export interface DesktopApi {
   addAccount(input: AccountInput): Promise<Account>
   removeAccount(id: string): Promise<void>
   listMail(accountId: string, folder: string): Promise<MailSummary[]>
-  getMail(accountId: string, folder: string, uid: number): Promise<MailDetail>
+  getMail(accountId: string, folder: string, uid: number, markRead?: boolean): Promise<MailDetail>
   openExternalLink(url: string): Promise<void>
   getSentFolder(accountId: string): Promise<string | null>
   sendMail(draft: MailDraft): Promise<void>
@@ -81,4 +143,9 @@ export interface DesktopApi {
   generateDraft(instruction: string, accountId: string): Promise<MailDraft>
   generateDigest(accountIds: string[]): Promise<DailyDigest>
   onDailyDigest(listener: (digest: DailyDigest) => void): () => void
+  listAgentConversations(): Promise<AgentConversation[]>
+  runAgent(prompt: string, conversationId?: string): Promise<AgentRunResult>
+  confirmAgentProposal(proposalId: string): Promise<AgentConfirmResult>
+  clearAgentHistory(): Promise<void>
+  onAgentProgress(listener: (progress: AgentProgress) => void): () => void
 }
