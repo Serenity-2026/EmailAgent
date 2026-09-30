@@ -76,7 +76,7 @@ export async function listMail(account: StoredAccount, folder: string): Promise<
   })
 }
 
-export async function getMail(account: StoredAccount, folder: string, uid: number, markRead = true): Promise<MailDetail> {
+export async function getMail(account: StoredAccount, folder: string, uid: number, markRead = true, includeRichBody = true): Promise<MailDetail> {
   if (!Number.isSafeInteger(uid) || uid < 1) throw new Error('邮件编号无效')
   return withImap(account, async (client) => {
     const lock = await client.getMailboxLock(folder)
@@ -90,6 +90,14 @@ export async function getMail(account: StoredAccount, folder: string, uid: numbe
       }, { uid: true })
       if (!message || !message.source) throw new Error('邮件不存在或已被移走')
       const parsed = await simpleParser(message.source)
+      let inlineBytes = 0
+      const inlineImages = includeRichBody ? parsed.attachments.flatMap((attachment) => {
+        const contentId = attachment.contentId?.replace(/^<|>$/g, '')
+        if (!contentId || !/^image\/(?:png|jpeg|gif|webp)$/i.test(attachment.contentType) ||
+          attachment.content.length > 2_000_000 || inlineBytes + attachment.content.length > 8_000_000) return []
+        inlineBytes += attachment.content.length
+        return [{ contentId, contentType: attachment.contentType.toLowerCase(), base64: attachment.content.toString('base64') }]
+      }) : []
       if (markRead) await client.messageFlagsAdd(uid.toString(), ['\\Seen'], { uid: true })
       const summary = summaryOf(account, folder, message)
       return {
@@ -97,9 +105,13 @@ export async function getMail(account: StoredAccount, folder: string, uid: numbe
         unread: markRead ? false : summary.unread,
         to: Array.isArray(parsed.to) ? parsed.to.map((address) => address.text).join(', ') : parsed.to?.text || '',
         text: parsed.text || '（这封邮件没有纯文本正文）',
+        html: includeRichBody && typeof parsed.html === 'string' ? parsed.html : undefined,
+        inlineImages,
         messageId: parsed.messageId,
         references: parsed.references ? (Array.isArray(parsed.references) ? parsed.references : [parsed.references]) : undefined,
-        attachmentNames: parsed.attachments.map((attachment) => attachment.filename || '未命名附件')
+        attachmentNames: parsed.attachments.filter((attachment) =>
+          attachment.contentDisposition === 'attachment' || !attachment.contentId)
+          .map((attachment) => attachment.filename || '未命名附件')
       }
     } finally {
       lock.release()
@@ -170,7 +182,7 @@ export async function todayMail(account: StoredAccount, start: Date): Promise<Ma
   })
   const details: MailDetail[] = []
   for (const summary of summaries) {
-    details.push(await getMail(account, 'INBOX', summary.uid, false))
+    details.push(await getMail(account, 'INBOX', summary.uid, false, false))
   }
   return details
 }

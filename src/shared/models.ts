@@ -25,6 +25,8 @@ export interface MailSummary {
 export interface MailDetail extends MailSummary {
   to: string
   text: string
+  html?: string
+  inlineImages: { contentId: string; contentType: string; base64: string }[]
   messageId?: string
   references?: string[]
   attachmentNames: string[]
@@ -69,6 +71,7 @@ export interface DesktopApi {
   removeAccount(id: string): Promise<void>
   listMail(accountId: string, folder: string): Promise<MailSummary[]>
   getMail(accountId: string, folder: string, uid: number): Promise<MailDetail>
+  openExternalLink(url: string): Promise<void>
   getSentFolder(accountId: string): Promise<string | null>
   sendMail(draft: MailDraft): Promise<void>
   getAiSettings(): Promise<AiSettingsView>

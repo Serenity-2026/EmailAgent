@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import type { AccountInput, AiSettingsInput, DailyDigest, MailDraft } from '../shared/models'
 import { generateDigest as summarize, generateDraft, listAiModels, resolveAiKey, testAiConnection, validateAiSettings } from './ai'
 import { getMail, getSentFolder, listMail, sendMail, testAccount, todayMail } from './mail'
@@ -102,6 +102,13 @@ function registerIpc(): void {
     const result = await getMail(accountById(accountId), folder, uid)
     requireSession(version)
     return result
+  })
+  ipcMain.handle('mail:open-link', async (event, value: string) => {
+    if (!store.activeUsername) throw new Error('请先登录')
+    if (event.senderFrame !== window?.webContents.mainFrame || typeof value !== 'string') throw new Error('链接无效')
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || !url.hostname || url.username || url.password) throw new Error('仅支持打开 HTTPS 链接')
+    await shell.openExternal(url.toString())
   })
   ipcMain.handle('mail:sent-folder', async (_event, accountId: string) => {
     const version = store.sessionVersion

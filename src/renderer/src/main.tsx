@@ -5,6 +5,7 @@ import 'antd/dist/reset.css'
 import type {
   Account, AccountInput, AiSettingsInput, DailyDigest, DesktopApi, MailDetail, MailDraft, MailSummary, Provider
 } from '../../shared/models'
+import { MailHtmlView } from './mail-html'
 import './styles.css'
 
 declare global {
@@ -380,6 +381,20 @@ function EmailApp(): React.JSX.Element {
     setComposeOpen(true)
   }
 
+  function openMailLink(url: string): void {
+    if (url.startsWith('mailto:')) {
+      const recipient = url.slice(7).split('?')[0]
+      try {
+        newMessage()
+        setDraft({ ...emptyDraft(accountId), to: decodeURIComponent(recipient) })
+      } catch {
+        setError('邮件地址无效')
+      }
+      return
+    }
+    void api.openExternalLink(url).catch((err) => setError(errorText(err)))
+  }
+
   async function generateMailDraft(): Promise<void> {
     const epoch = sessionEpoch.current
     setPromptBusy(true)
@@ -578,7 +593,8 @@ function EmailApp(): React.JSX.Element {
               {detail.attachmentNames.length > 0 && <div><strong>附件：</strong>{detail.attachmentNames.join('、')}</div>}
             </div>
             <div className="reader-divider" />
-            <div className="mail-body">{detail.text}</div>
+            {detail.html ? <MailHtmlView key={`${detail.accountId}-${detail.folder}-${detail.uid}`}
+              detail={detail} onOpenLink={openMailLink} /> : <div className="mail-body">{detail.text}</div>}
             <div className="reader-actions"><Button onClick={() => newMessage(true)}>回复</Button></div>
           </article> : <div className="empty-pane"><Empty description="选择一封邮件查看" /></div>}
         </div>

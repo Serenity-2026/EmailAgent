@@ -50,6 +50,8 @@ button, input, textarea { font: inherit; }
 .reader-meta strong { color: #475570; }
 .reader-divider { height: 1px; margin: 28px 0; background: #edf0f5; }
 .mail-body, .digest-body { white-space: pre-wrap; overflow-wrap: anywhere; color: #364158; line-height: 1.85; font-size: 14px; }
+.mail-rich-body iframe { display: block; width: 100%; min-height: 120px; border: 0; background: #fff; }
+.remote-images-note { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; padding: 9px 12px; border-radius: 8px; background: #f3f6fc; color: #68768e; font-size: 12px; }
 .reader-actions { display: flex; gap: 8px; margin-top: 30px; }
 .empty-pane { display: grid; place-items: center; min-height: 100%; color: #8a9ab0; }
 .digest-view { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 32px; }

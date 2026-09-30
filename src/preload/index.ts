@@ -23,6 +23,7 @@ const api: DesktopApi = {
   removeAccount: (id) => invoke('accounts:remove', id),
   listMail: (accountId, folder) => invoke('mail:list', accountId, folder),
   getMail: (accountId, folder, uid) => invoke('mail:get', accountId, folder, uid),
+  openExternalLink: (url) => invoke('mail:open-link', url),
   getSentFolder: (accountId) => invoke('mail:sent-folder', accountId),
   sendMail: (draft) => invoke('mail:send', draft),
   getAiSettings: () => invoke('ai:settings:get'),

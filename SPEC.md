@@ -57,7 +57,7 @@ EmailAgent 是一款基于 Electron 的桌面邮件客户端。用户可以连�
 | 编号 | 需求 | 首版验收标准 |
 | --- | --- | --- |
 | M1 | 收件箱列表 | 显示最近 50 封邮件，支持手动刷新，标明当前账户和未读状态 |
-| M2 | 阅读邮件 | 展示发件人、收件人、主题、时间及正文；优先显示纯文本，HTML 内容必须安全净化 |
+| M2 | 阅读邮件 | 展示发件人、收件人、主题、时间及正文；优先安全渲染 HTML 排版和内嵌图片，纯文本邮件回退为文本；远程图片按封手动加载 |
 | M3 | 撰写与发送 | 支持收件人、主题、正文；校验地址和必填字段；发送成功后展示结果 |
 | M4 | 回复邮件 | 自动带入收件人和回复主题，保持原邮件的回复关系 |
 | M5 | 已发送邮件 | 可查看服务商的“已发送”文件夹；若服务商未自动保存，应用需按该服务商能力处理并在界面说明 |
@@ -113,7 +113,7 @@ Electron 主进程
 
 使用 TypeScript、Electron、React、antd、[ImapFlow](https://imapflow.com/docs/) 与 [Nodemailer](https://nodemailer.com/smtp/)。首版直接读取邮箱服务器，不持久缓存邮件正文；每位用户的邮箱信息、授权码和 AI Key 使用由登录密码派生的密钥加密后存于本地文件。旧版 `safeStorage` 数据在初始用户登录时备份并迁移。AI 服务通过独立适配层调用，避免把某一家模型 API 写入业务逻辑。
 
-遵循 [Electron 官方安全建议](https://www.electronjs.org/docs/latest/tutorial/security)：渲染进程禁用 Node 集成，启用上下文隔离与沙箱；preload 仅暴露必要的、带参数校验的 IPC 方法；不允许邮件 HTML 执行脚本、加载不可信远程内容或打开未经校验的外部链接。IMAP、SMTP 和 AI 请求均使用加密连接。
+遵循 [Electron 官方安全建议](https://www.electronjs.org/docs/latest/tutorial/security)：渲染进程禁用 Node 集成，启用上下文隔离与沙箱；preload 仅暴露必要的、带参数校验的 IPC 方法；不允许邮件 HTML 执行脚本，远程图片仅在用户对当前邮件点击加载后通过 HTTPS 获取，外部链接仅在校验 HTTPS 地址后由系统浏览器打开。IMAP、SMTP 和 AI 请求均使用加密连接。
 
 ## 7. 数据与隐私边界
 
