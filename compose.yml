@@ -1,0 +1,47 @@
+name: emailagent
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: emailagent
+      MYSQL_USER: emailagent
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      TZ: Asia/Taipei
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -h localhost -u root --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_DATABASE: emailagent
+      MYSQL_USER: emailagent
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      SESSION_KEY: ${SESSION_KEY:?Set SESSION_KEY in .env}
+      API_HOST: 0.0.0.0
+      API_PORT: 3210
+      TZ: Asia/Taipei
+    ports:
+      - "127.0.0.1:3210:3210"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3210/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+volumes:
+  mysql-data:

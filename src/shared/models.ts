@@ -1,0 +1,167 @@
+export type Provider = 'qq' | '163'
+
+export interface AccountInput {
+  provider: Provider
+  address: string
+  authorizationCode: string
+}
+
+export interface Account {
+  id: string
+  provider: Provider
+  address: string
+}
+
+export interface MailSummary {
+  uid: number
+  accountId: string
+  folder: string
+  from: string
+  subject: string
+  date: string
+  unread: boolean
+}
+
+export interface MailDetail extends MailSummary {
+  to: string
+  text: string
+  html?: string
+  inlineImages: { contentId: string; contentType: string; base64: string }[]
+  messageId?: string
+  references?: string[]
+  attachmentNames: string[]
+}
+
+export interface MailDraft {
+  accountId: string
+  to: string
+  subject: string
+  text: string
+  replyTo?: { uid: number; folder: string; uidValidity?: string }
+}
+
+export interface AiSettingsInput {
+  baseUrl: string
+  model: string
+  apiKey: string
+  dailyTime: string
+  autoDaily: boolean
+}
+
+export interface AiSettingsView extends Omit<AiSettingsInput, 'apiKey'> {
+  hasApiKey: boolean
+}
+
+export interface DailyDigest {
+  date: string
+  content: string
+  sources: MailSummary[]
+}
+
+export interface AgentMailRef extends MailSummary {
+  accountAddress: string
+  uidValidity: string
+  to?: string[]
+  citationNumber?: number
+  archiveAvailable?: boolean
+}
+
+export type ThemeMode = 'system' | 'light' | 'dark'
+
+export interface MailOverview {
+  since: string
+  received: number
+  sent: number
+  sampled: boolean
+  topSenders: { address: string; count: number }[]
+  topRecipients: { address: string; count: number }[]
+  topics: { name: string; count: number }[]
+  warnings: string[]
+}
+
+export type AgentActionKind = 'markRead' | 'markUnread' | 'archive'
+
+export interface AgentAction {
+  kind: AgentActionKind
+  mail: AgentMailRef
+}
+
+export interface AgentActionResult extends AgentAction {
+  success: boolean
+  error?: string
+}
+
+export interface AgentMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: string
+  sources?: AgentMailRef[]
+  draft?: MailDraft
+  actionResults?: AgentActionResult[]
+  scope?: string
+  truncated?: boolean
+  warnings?: string[]
+}
+
+export interface AgentConversation {
+  id: string
+  updatedAt: string
+  messages: AgentMessage[]
+}
+
+export interface AgentProposal {
+  id: string
+  actions: AgentAction[]
+  expiresAt: string
+}
+
+export interface AgentRunResult {
+  conversation: AgentConversation
+  scope: string
+  truncated: boolean
+  warnings: string[]
+  proposal?: AgentProposal
+}
+
+export interface AgentConfirmResult {
+  results: AgentActionResult[]
+  historySaved: boolean
+}
+
+export interface AgentProgress {
+  stage: 'planning' | 'searching' | 'reading' | 'answering'
+  detail: string
+}
+
+export interface DesktopApi {
+  getSession(): Promise<{ username: string | null }>
+  login(username: string, password: string): Promise<{ username: string }>
+  logout(): Promise<void>
+  createUser(username: string, password: string): Promise<void>
+  changePassword(currentPassword: string, nextPassword: string): Promise<void>
+  listAccounts(): Promise<Account[]>
+  addAccount(input: AccountInput): Promise<Account>
+  removeAccount(id: string): Promise<void>
+  listMail(accountId: string, folder: string): Promise<MailSummary[]>
+  getMail(accountId: string, folder: string, uid: number, markRead?: boolean): Promise<MailDetail>
+  openExternalLink(url: string): Promise<void>
+  getSentFolder(accountId: string): Promise<string | null>
+  sendMail(draft: MailDraft): Promise<void>
+  getAiSettings(): Promise<AiSettingsView>
+  listAiModels(baseUrl: string, apiKey: string): Promise<string[]>
+  saveAiSettings(input: AiSettingsInput): Promise<void>
+  testAiConnection(): Promise<void>
+  generateDraft(instruction: string, accountId: string): Promise<MailDraft>
+  generateDigest(accountIds: string[]): Promise<DailyDigest>
+  onDailyDigest(listener: (digest: DailyDigest) => void): () => void
+  listAgentConversations(): Promise<AgentConversation[]>
+  runAgent(prompt: string, conversationId?: string): Promise<AgentRunResult>
+  confirmAgentProposal(proposalId: string): Promise<AgentConfirmResult>
+  clearAgentHistory(): Promise<void>
+  onAgentProgress(listener: (progress: AgentProgress) => void): () => void
+  onAppError(listener: (message: string) => void): () => void
+  getAgentOverview(): Promise<MailOverview>
+  getThemeMode(): Promise<ThemeMode>
+  setThemeMode(mode: ThemeMode): Promise<void>
+}

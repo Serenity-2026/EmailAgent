@@ -1,0 +1,11 @@
+appId: com.emailagent.desktop
+productName: EmailAgent
+directories:
+  output: release
+files:
+  - out/main/**/*
+  - out/preload/**/*
+  - out/renderer/**/*
+  - package.json
+mac:
+  target: dir

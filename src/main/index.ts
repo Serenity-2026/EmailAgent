@@ -1,0 +1,63 @@
+import { join } from 'node:path'
+import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
+import { API_CHANNELS } from '../shared/api'
+import { BackendClient } from './backend-client'
+import type { ThemeMode } from '../shared/models'
+
+let window: BrowserWindow | null = null
+let client: BackendClient
+const ownsInstance = app.requestSingleInstanceLock()
+if (!ownsInstance) app.quit()
+
+function emit(channel: string, payload: unknown): void {
+  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return
+  if (channel === 'auth:expired') { nativeTheme.themeSource = 'system'; window.webContents.reload(); return }
+  try { window.webContents.send(channel, payload) } catch { /* Renderer has closed. */ }
+}
+
+function createWindow(): void {
+  window = new BrowserWindow({
+    width: 1240, height: 800, minWidth: 900, minHeight: 600, title: 'EmailAgent',
+    webPreferences: { preload: join(__dirname, '../preload/index.js'), nodeIntegration: false, contextIsolation: true, sandbox: true }
+  })
+  window.webContents.on('will-navigate', (event) => event.preventDefault())
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.on('closed', () => { client.stopEvents(); window = null })
+  const load = process.env.ELECTRON_RENDERER_URL ? window.loadURL(process.env.ELECTRON_RENDERER_URL) : window.loadFile(join(__dirname, '../renderer/index.html'))
+  void load.catch(() => emit('app:error', '界面加载失败，请重新启动应用'))
+  client.startEvents()
+}
+
+function registerIpc(): void {
+  for (const channel of API_CHANNELS) {
+    ipcMain.handle(channel, async (event, ...args: unknown[]) => {
+      if (event.senderFrame !== window?.webContents.mainFrame) throw new Error('请求来源无效')
+      const result = await client.request(channel, args)
+      if (channel === 'theme:set') nativeTheme.themeSource = args[0] as ThemeMode
+      if (channel === 'theme:get') nativeTheme.themeSource = result as ThemeMode
+      if (channel === 'auth:logout') nativeTheme.themeSource = 'system'
+      return result
+    })
+  }
+  ipcMain.handle('mail:open-link', async (event, value: string) => {
+    if (event.senderFrame !== window?.webContents.mainFrame || typeof value !== 'string') throw new Error('链接无效')
+    const session = await client.request<{ username: string | null }>('auth:session')
+    if (!session.username) throw new Error('请先登录')
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || !url.hostname || url.username || url.password) throw new Error('仅支持打开 HTTPS 链接')
+    await shell.openExternal(url.toString())
+  })
+}
+
+process.on('uncaughtException', () => emit('app:error', '应用遇到意外错误，请重新启动应用'))
+process.on('unhandledRejection', () => emit('app:error', '应用请求失败，请稍后重试'))
+app.on('second-instance', () => { if (window && !window.isDestroyed()) { if (window.isMinimized()) window.restore(); window.focus() } })
+if (ownsInstance) void app.whenReady().then(async () => {
+  client = new BackendClient(app.getPath('userData'), emit)
+  await client.restoreToken()
+  registerIpc()
+  createWindow()
+})
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
+app.on('activate', () => { if (ownsInstance && client && BrowserWindow.getAllWindows().length === 0) createWindow() })
+app.on('before-quit', () => client?.stopEvents())
