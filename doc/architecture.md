@@ -1,13 +1,18 @@
 # EmailAgent 业务与代码架构
 
-更新时间：2026-10-01
-更新内容：Electron 与独立 Node.js 后端分离，用户数据与会话迁入 Docker MySQL，并支持旧加密数据迁移。
+更新时间：2026-10-07
+更新内容：桌面应用启动时自动检查并启动 Docker 中的 MySQL 与后端，安装包携带后端运行文件。
 
 ## 应用边界
 
 Electron 渲染进程只负责中文界面，通过 preload 的固定 IPC 方法调用桌面主进程。主进程负责窗口、系统主题、外部链接、安全保存会话令牌，以及向独立 Node.js 后端转发 HTTP 请求。`src/main` 不连接数据库、邮箱或 AI；`src/backend` 负责认证、MySQL 读写、IMAP/SMTP、AI 和 Agent。默认后端地址为 `http://127.0.0.1:3210`；可通过启动环境中的 `EMAILAGENT_API_URL` 指定 HTTPS 或本机地址。渲染进程不能访问数据库账号、会话令牌、邮箱授权码或 Node API。后端未启动时界面提供“重新连接”。
 
 后端和 MySQL 通过 `compose.yml` 独立部署；宿主机只在回环地址发布 API 3210 和 MySQL 3306。MySQL 使用命名卷保存数据，重启容器或 `docker compose down` 不删除数据。root 初始密码由 `.env` 的 `MYSQL_ROOT_PASSWORD` 提供，后端使用单独的 `emailagent` 数据库账号。初始化变量仅在空数据卷首次启动时生效，口径见 [MySQL 官方容器入口](https://github.com/docker-library/mysql/blob/master/8.4/docker-entrypoint.sh)。
+
+打包时将已编译的后端、生产依赖清单、`Dockerfile.runtime` 与 Compose 文件放入应用资源目录。桌面启动或发送请求时先检查本机 API 健康状态；服务未就绪时自动启动现有 Docker 引擎（Colima 或 Docker Desktop），并通过打包的 Compose 文件构建、启动 MySQL 和后端，等待健康检查通过后继续请求。同一时间只执行一次启动任务。首次启动从现有 EmailAgent 容器恢复数据库账号密钥和会话密钥；新环境生成独立应用账号密码和会话密钥。配置仅写入当前用户应用数据目录的 `service.env`，权限为 `0600`，不放进安装包。已有数据库卷但缺少连接配置时停止启动并保留数据。自定义后端地址时跳过本机服务管理。
+
+定时摘要的会话检查遇到短暂数据库故障时等待下一次检查，不将其误报为摘要生成失败。
+
 主界面固定在窗口可视区域内；左侧菜单、邮件列表和邮件正文分别拥有自己的纵向滚动区域，滚动一栏不改变另外两栏的位置。
 
 当前用户可选择亮色、暗色或跟随系统。偏好保存在用户加密数据中；Electron `nativeTheme` 与渲染进程的 Ant Design 主题同步，系统外观变化时即时更新。登出后恢复跟随系统。

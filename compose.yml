@@ -22,7 +22,7 @@ services:
   backend:
     build:
       context: .
-      dockerfile: Dockerfile.backend
+      dockerfile: ${BACKEND_DOCKERFILE:-Dockerfile.backend}
     restart: unless-stopped
     depends_on:
       mysql:

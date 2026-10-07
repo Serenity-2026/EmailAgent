@@ -614,7 +614,7 @@ function EmailApp({ themeMode, setThemeMode, dark }: {
     }
   }
 
-  if (connectionStatus === 'loading') return <div className="launch-screen"><Spin /></div>
+  if (connectionStatus === 'loading') return <div className="launch-screen"><div className="recovery-card"><Spin /><p>正在启动邮件服务…</p></div></div>
 
   if (connectionStatus !== 'ready') return <div className="recovery-shell">
     <div className="recovery-card">

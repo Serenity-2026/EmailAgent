@@ -1,13 +1,15 @@
 # EmailAgent
 
-更新时间：2026-10-01
-更新内容：独立后端、Docker MySQL、数据迁移与部署命令。
+更新时间：2026-10-07
+更新内容：桌面应用自动启动本机 Docker 服务，安装包携带后端运行文件。
 
 面向课程作业的 Electron 桌面邮件助手，支持 QQ/163 邮箱、每日 AI 摘要、一句话写邮件与带来源的 Agent 对话。中文桌面界面连接独立 Node.js 后端，用户数据与会话保存在 Docker MySQL 中。邮箱授权码和 AI Key 按用户加密；使用 AI 功能时，所选邮件片段发送给用户配置的模型服务。
 
 ## 启动
 
-需要 Node.js 22 或更新版本、npm 和可用的 Docker Engine/Compose；桌面演示环境为 macOS。后端也可以独立部署。
+直接使用打包的 macOS 应用时，双击应用即可自动启动本机 Docker 中的 MySQL 和后端；机器上需要安装 Docker Engine/Compose，Colima 或 Docker Desktop 可由应用自动启动。启动中的界面会显示等待提示，服务不可用时可在界面重新连接。应用包内包含后端运行文件，首次启动需要 Docker 能取得 MySQL 和 Node 基础镜像。已有数据库与登录状态会保留。
+
+源码开发需要 Node.js 22 或更新版本、npm 和可用的 Docker Engine/Compose；后端也可以独立部署。
 
 ```bash
 npm install
@@ -21,7 +23,7 @@ npm run services:up
 npm run dev
 ```
 
-`services:up` 启动 MySQL 和后端，并等待健康检查。默认 API 为 `127.0.0.1:3210`，MySQL 为 `127.0.0.1:3306`，数据库名 `emailagent`。应用首次以 `dmc` / `123456` 登录；若导入旧用户，使用原密码。后端未运行时，界面可点击“重新连接”。
+`services:up` 供源码开发时手动启动 MySQL 和后端，并等待健康检查。打包应用会自动完成该步骤。默认 API 为 `127.0.0.1:3210`，MySQL 为 `127.0.0.1:3306`，数据库名 `emailagent`。应用首次以 `dmc` / `123456` 登录；若导入旧用户，使用原密码。
 
 ```bash
 npm run services:down

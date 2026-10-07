@@ -103,7 +103,8 @@ export function createBackendServer(db: Database): ReturnType<typeof createServe
         continue
       }
       void (async () => {
-        const session = await db.session(token)
+        let session: Awaited<ReturnType<typeof db.session>>
+        try { session = await db.session(token) } catch { return }
         if (!session) { context.invalidate(); contexts.delete(token); return }
         session.key.fill(0)
         const settings = context.store.ai
