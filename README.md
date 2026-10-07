@@ -1,18 +1,24 @@
 # EmailAgent
 
 更新时间：2026-10-07
-更新内容：桌面应用自动启动本机 Docker 服务，安装包携带后端运行文件。
+更新内容：补充从 GitHub 下载桌面安装包及从源码启动的步骤。
 
 面向课程作业的 Electron 桌面邮件助手，支持 QQ/163 邮箱、每日 AI 摘要、一句话写邮件与带来源的 Agent 对话。中文桌面界面连接独立 Node.js 后端，用户数据与会话保存在 Docker MySQL 中。邮箱授权码和 AI Key 按用户加密；使用 AI 功能时，所选邮件片段发送给用户配置的模型服务。
 
-## 启动
+## 使用桌面应用
 
-直接使用打包的 macOS 应用时，双击应用即可自动启动本机 Docker 中的 MySQL 和后端；机器上需要安装 Docker Engine/Compose，Colima 或 Docker Desktop 可由应用自动启动。启动中的界面会显示等待提示，服务不可用时可在界面重新连接。应用包内包含后端运行文件，首次启动需要 Docker 能取得 MySQL 和 Node 基础镜像。已有数据库与登录状态会保留。
+1. 在 Apple Silicon Mac 上安装 Docker Desktop，或安装 Docker Engine/Compose 与 Colima。应用会自动启动已安装的 Docker 环境。
+2. 从 [GitHub Releases](https://github.com/Serenity-2026/EmailAgent/releases/latest) 下载 `EmailAgent-mac-arm64-one-click-20261007.zip`，解压后双击 `EmailAgent.app`。
+3. 等待应用自动启动 MySQL 和后端。首次启动需要联网获取 MySQL 和 Node 基础镜像；随后使用初始账号 `dmc`、密码 `123456` 登录。已有用户使用原密码，登录状态会自动恢复。
 
-源码开发需要 Node.js 22 或更新版本、npm 和可用的 Docker Engine/Compose；后端也可以独立部署。
+服务不可用时，应用内可点击“重新连接”。MySQL 数据保存在 Docker 命名卷中，关闭应用或重启电脑不会清空数据。
+
+## 从源码启动
+
+需要 Node.js 22 或更新版本、npm 和可用的 Docker Engine/Compose。克隆仓库后，在项目目录执行：
 
 ```bash
-npm install
+npm ci
 cp .env.example .env
 ```
 
@@ -23,7 +29,7 @@ npm run services:up
 npm run dev
 ```
 
-`services:up` 供源码开发时手动启动 MySQL 和后端，并等待健康检查。打包应用会自动完成该步骤。默认 API 为 `127.0.0.1:3210`，MySQL 为 `127.0.0.1:3306`，数据库名 `emailagent`。应用首次以 `dmc` / `123456` 登录；若导入旧用户，使用原密码。
+`services:up` 在源码开发时启动 MySQL 和后端，并等待健康检查。桌面安装包会自动完成该步骤。默认 API 为 `127.0.0.1:3210`，MySQL 为 `127.0.0.1:3306`，数据库名 `emailagent`。后端也可单独部署。
 
 ```bash
 npm run services:down
@@ -51,7 +57,7 @@ npm run build
 npm run package:mac
 ```
 
-`test:backend` 使用 `.env` 中的 root 凭据创建隔离测试数据库，结束后删除测试数据库，不使用正式用户数据。桌面应用产物位于 `release/mac-arm64/EmailAgent.app`。
+`test:backend` 使用 `.env` 中的 root 凭据创建隔离测试数据库，结束后删除测试数据库，不使用正式用户数据。`npm run package:mac` 在 `release/mac-arm64/EmailAgent.app` 生成可双击的应用。
 
 后端代码在 `src/backend`，Electron 系统代码在 `src/main`，React 界面在 `src/renderer`，共享 API 与数据契约在 `src/shared`。需要在宿主机调试后端时：
 
