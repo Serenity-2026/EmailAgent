@@ -2,10 +2,12 @@ import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
 import { API_CHANNELS } from '../shared/api'
 import { BackendClient } from './backend-client'
+import { LocalService } from './local-service'
 import type { ThemeMode } from '../shared/models'
 
 let window: BrowserWindow | null = null
 let client: BackendClient
+let localService: LocalService | null = null
 const ownsInstance = app.requestSingleInstanceLock()
 if (!ownsInstance) app.quit()
 
@@ -32,6 +34,7 @@ function registerIpc(): void {
   for (const channel of API_CHANNELS) {
     ipcMain.handle(channel, async (event, ...args: unknown[]) => {
       if (event.senderFrame !== window?.webContents.mainFrame) throw new Error('请求来源无效')
+      if (channel !== 'auth:logout') await localService?.ready()
       const result = await client.request(channel, args)
       if (channel === 'theme:set') nativeTheme.themeSource = args[0] as ThemeMode
       if (channel === 'theme:get') nativeTheme.themeSource = result as ThemeMode
@@ -41,6 +44,7 @@ function registerIpc(): void {
   }
   ipcMain.handle('mail:open-link', async (event, value: string) => {
     if (event.senderFrame !== window?.webContents.mainFrame || typeof value !== 'string') throw new Error('链接无效')
+    await localService?.ready()
     const session = await client.request<{ username: string | null }>('auth:session')
     if (!session.username) throw new Error('请先登录')
     const url = new URL(value)
@@ -54,6 +58,9 @@ process.on('unhandledRejection', () => emit('app:error', '应用请求失败，�
 app.on('second-instance', () => { if (window && !window.isDestroyed()) { if (window.isMinimized()) window.restore(); window.focus() } })
 if (ownsInstance) void app.whenReady().then(async () => {
   client = new BackendClient(app.getPath('userData'), emit)
+  if (!process.env.EMAILAGENT_API_URL) {
+    localService = new LocalService(app.getPath('userData'), app.isPackaged ? join(process.resourcesPath, 'service') : process.cwd(), app.isPackaged)
+  }
   await client.restoreToken()
   registerIpc()
   createWindow()

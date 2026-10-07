@@ -16,7 +16,7 @@
     "services:up": "docker compose up -d --build --wait",
     "services:down": "docker compose down",
     "test:backend": "EMAILAGENT_MYSQL_TEST=1 node --env-file=.env node_modules/vitest/vitest.mjs run src/backend/database.integration.test.ts",
-    "package:mac": "npm run build && electron-builder --mac dir --publish never --config.electronDist=node_modules/electron/dist"
+    "package:mac": "npm run backend:build && npm run build && node scripts/prepare-runtime.mjs && electron-builder --mac dir --publish never --config.electronDist=node_modules/electron/dist"
   },
   "dependencies": {
     "@ant-design/plots": "2.6.8",
