@@ -1,5 +1,5 @@
 export const API_CHANNELS = [
-  'auth:session', 'auth:login', 'auth:logout', 'auth:create', 'auth:password',
+  'auth:bootstrap-status', 'auth:bootstrap', 'auth:session', 'auth:login', 'auth:logout', 'auth:create', 'auth:password',
   'accounts:list', 'accounts:add', 'accounts:remove', 'mail:list', 'mail:get', 'mail:sent-folder', 'mail:send',
   'ai:settings:get', 'ai:models', 'ai:settings:save', 'ai:settings:test', 'ai:draft', 'ai:digest',
   'agent:history', 'agent:overview', 'agent:run', 'agent:confirm', 'agent:clear', 'theme:get', 'theme:set'
@@ -11,9 +11,9 @@ export function validateRpc(channel: string, args: unknown[]): void {
   const uid = (value: unknown): boolean => Number.isSafeInteger(value) && Number(value) > 0
   let valid = false
   switch (channel) {
-    case 'auth:session': case 'auth:logout': case 'accounts:list': case 'ai:settings:get': case 'ai:settings:test':
+    case 'auth:bootstrap-status': case 'auth:session': case 'auth:logout': case 'accounts:list': case 'ai:settings:get': case 'ai:settings:test':
     case 'agent:history': case 'agent:overview': case 'agent:clear': case 'theme:get': valid = args.length === 0; break
-    case 'auth:login': case 'auth:create': case 'auth:password': case 'ai:models':
+    case 'auth:bootstrap': case 'auth:login': case 'auth:create': case 'auth:password': case 'ai:models':
       valid = args.length === 2 && args.every((value) => string(value)); break
     case 'accounts:remove': case 'mail:sent-folder': case 'agent:confirm': case 'theme:set':
       valid = args.length === 1 && string(args[0]); break

@@ -12,11 +12,17 @@ export function useSessionState() {
   const [loginName, setLoginName] = useState('dmc')
   const [loginPassword, setLoginPassword] = useState('')
   const [loginBusy, setLoginBusy] = useState(false)
+  const [bootstrapRequired, setBootstrapRequired] = useState(false)
+  const [bootstrapConfirm, setBootstrapConfirm] = useState('')
+  const [bootstrapBusy, setBootstrapBusy] = useState(false)
+  const [demoMode, setDemoMode] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [connectionBusy, setConnectionBusy] = useState(false)
   const sessionEpoch = useRef(0)
   return { error, setError, activeUser, setActiveUser, loginName, setLoginName, loginPassword, setLoginPassword,
-    loginBusy, setLoginBusy, connectionStatus, setConnectionStatus, connectionBusy, setConnectionBusy, sessionEpoch }
+    loginBusy, setLoginBusy, bootstrapRequired, setBootstrapRequired, bootstrapConfirm, setBootstrapConfirm,
+    bootstrapBusy, setBootstrapBusy, demoMode, setDemoMode,
+    connectionStatus, setConnectionStatus, connectionBusy, setConnectionBusy, sessionEpoch }
 }
 
 export function useAccountSettingsState() {

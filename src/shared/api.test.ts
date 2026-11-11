@@ -4,6 +4,7 @@ import { API_CHANNELS, validateRpc } from './api'
 describe('RPC request validation', () => {
   it('keeps every declared channel covered by the validator', () => {
     const validArguments: Record<(typeof API_CHANNELS)[number], unknown[]> = {
+      'auth:bootstrap-status': [], 'auth:bootstrap': ['admin', 'password'],
       'auth:session': [], 'auth:login': ['dmc', 'password'], 'auth:logout': [],
       'auth:create': ['student', 'password'], 'auth:password': ['old-password', 'new-password'],
       'accounts:list': [], 'accounts:add': [{ provider: 'qq', address: 'student@qq.com', authorizationCode: 'code' }],

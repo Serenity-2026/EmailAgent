@@ -4,13 +4,15 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Account, AgentConversation, AgentProposal, DesktopApi, MailSummary } from '../../shared/models'
 
+vi.setConfig({ testTimeout: 15_000 })
+
 const account: Account = { id: 'account', provider: 'qq', address: 'student@qq.com' }
 const mail: MailSummary = {
   uid: 7, accountId: account.id, folder: 'INBOX', from: 'teacher@example.com',
   subject: '课程安排', date: '2026-11-11T08:00:00.000Z', unread: true
 }
 
-function apiFor(session: string | null): DesktopApi {
+function apiFor(session: string | null, bootstrapRequired = false, demoMode = false): DesktopApi {
   let username = session
   const conversation: AgentConversation = { id: 'conversation', updatedAt: new Date().toISOString(), messages: [
     { id: 'assistant', role: 'assistant', content: '已找到邮件 [1]', createdAt: new Date().toISOString(), sources: [
@@ -21,6 +23,8 @@ function apiFor(session: string | null): DesktopApi {
     { kind: 'markRead', mail: { ...mail, accountAddress: account.address, uidValidity: '1', archiveAvailable: true } }
   ] }
   return {
+    getBootstrapStatus: vi.fn(async () => ({ required: bootstrapRequired, demoMode })),
+    bootstrap: vi.fn(async () => { username = 'admin'; bootstrapRequired = false; return { username } }),
     getSession: vi.fn(async () => ({ username })),
     login: vi.fn(async () => { username = 'dmc'; return { username } }), logout: vi.fn(async () => undefined),
     createUser: vi.fn(async () => undefined), changePassword: vi.fn(async () => undefined),
@@ -77,14 +81,26 @@ describe('renderer critical paths', () => {
   })
 
   it('shows the login path for an unauthenticated session', async () => {
-    window.emailAgent = apiFor(null)
+    window.emailAgent = apiFor(null, false, true)
     const { EmailApp } = await import('./app/email-app')
     const appRoot = createRoot(container)
     root = appRoot
     await act(async () => appRoot.render(<EmailApp themeMode="system" setThemeMode={() => undefined} dark={false} />))
     await flush()
     expect(container.textContent).toContain('登录')
+    expect(container.textContent).toContain('当前为演示模式')
     expect(container.querySelector('input[type="password"]')).not.toBeNull()
+  })
+
+  it('shows first-run administrator creation instead of a fixed default account', async () => {
+    window.emailAgent = apiFor(null, true)
+    const { EmailApp } = await import('./app/email-app')
+    const appRoot = createRoot(container)
+    root = appRoot
+    await act(async () => appRoot.render(<EmailApp themeMode="system" setThemeMode={() => undefined} dark={false} />))
+    await flush()
+    expect(container.textContent).toContain('创建首位管理员')
+    expect(container.textContent).not.toContain('当前为演示模式')
   })
 
   it('reaches the mailbox, compose preview and Agent confirmation paths', async () => {

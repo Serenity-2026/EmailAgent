@@ -10,6 +10,7 @@ import { MysqlStore } from './store'
 import { createBackendServer } from './server'
 import { emptyData, encryptVault, keyFor } from '../shared/vault'
 import { BackendClient } from '../main/backend-client'
+import { LoginAttemptLimiter } from './login-limiter'
 
 const encryption = vi.hoisted(() => ({ fail: false }))
 vi.mock('electron', () => ({ safeStorage: {
@@ -36,8 +37,8 @@ describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integr
   const ai = { baseUrl: 'https://example.com/v1', apiKey: 'secret-ai-key', model: 'test-model', dailyTime: '09:00', autoDaily: false }
   const account = { provider: 'qq', address: 'student@qq.com', authorizationCode: 'mail-secret-code' }
 
-  async function startServer(): Promise<void> {
-    server = createBackendServer(db)
+  async function startServer(loginLimiter?: LoginAttemptLimiter): Promise<void> {
+    server = createBackendServer(db, { loginLimiter })
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     baseUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}`
   }
@@ -60,13 +61,14 @@ describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integr
   beforeAll(async () => {
     root = createPool(mysql)
     await root.query(`CREATE DATABASE ${databaseName} CHARACTER SET utf8mb4`)
-    db = new Database(createPool({ ...mysql, database: databaseName }), randomBytes(32))
+    db = new Database(createPool({ ...mysql, database: databaseName }), randomBytes(32), true)
   })
   beforeEach(async () => {
     await db.initialize()
     await db.pool.execute('DELETE FROM sessions')
     await db.pool.execute('DELETE FROM migration_receipts')
     await db.pool.execute('DELETE FROM users')
+    await db.pool.execute('DELETE FROM app_state')
     await db.initialize()
     vi.clearAllMocks()
     await startServer()
@@ -86,6 +88,47 @@ describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integr
     expect((await rpc('missing:channel')).status).toBe(404)
     const response = await fetch(`${baseUrl}/api/rpc/auth%3Alogin`, { method: 'POST', headers: { Origin: 'https://untrusted.example', 'Content-Type': 'application/json' }, body: JSON.stringify({ args: ['dmc', '123456'] }) })
     expect(response.status).toBe(403)
+  })
+
+  it('bootstraps an empty database once and keeps the new session across a restart', async () => {
+    await db.pool.execute('DELETE FROM sessions')
+    await db.pool.execute('DELETE FROM users')
+    await db.pool.execute('UPDATE app_state SET initialized = FALSE WHERE id = 1')
+    expect((await rpc('auth:bootstrap-status')).result).toEqual({ required: true, demoMode: true })
+    const created = await rpc('auth:bootstrap', ['admin', 'strong-password'])
+    expect(created.status).toBe(200)
+    expect(created.result.username).toBe('admin')
+    expect((await rpc('auth:session', [], created.result.token)).result.username).toBe('admin')
+    expect((await rpc('auth:bootstrap', ['other', 'other-password'])).error).toContain('已经完成初始化')
+    await closeServer(); await startServer()
+    expect((await rpc('auth:session', [], created.result.token)).result.username).toBe('admin')
+    expect(await db.user('dmc')).toBeNull()
+  })
+
+  it('preserves existing users when adding bootstrap state to an older database', async () => {
+    const before = await MysqlStore.login(db, 'dmc', '123456')
+    await before.setThemeMode('dark')
+    before.logout()
+    await db.pool.execute('DROP TABLE app_state')
+    await db.initialize()
+    expect((await db.bootstrapStatus()).required).toBe(false)
+    const restored = await MysqlStore.login(db, 'dmc', '123456')
+    expect(restored.themeMode).toBe('dark')
+    restored.logout()
+  })
+
+  it('rate-limits repeated login failures without revealing whether an account exists', async () => {
+    await closeServer()
+    let now = 1_000
+    await startServer(new LoginAttemptLimiter(() => now, 2, 60_000, 30_000))
+    const wrongUser = await rpc('auth:login', ['missing', 'wrong'])
+    const wrongPassword = await rpc('auth:login', ['dmc', 'wrong'])
+    expect(wrongUser.error).toBe('账号或密码错误')
+    expect(wrongPassword.error).toBe('账号或密码错误')
+    expect((await rpc('auth:login', ['dmc', 'wrong-again'])).status).toBe(429)
+    expect((await rpc('auth:login', ['dmc', '123456'])).status).toBe(429)
+    now += 30_001
+    expect((await rpc('auth:login', ['dmc', '123456'])).status).toBe(200)
   })
 
   it('persists isolated mailbox, AI, theme and history data as encrypted MySQL values', async () => {

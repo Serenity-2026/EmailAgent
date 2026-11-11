@@ -5,7 +5,7 @@ import type {
   AgentMessage, AgentProposal, DesktopApi, MailSummary, ThemeMode
 } from '../../../shared/models'
 import { emptyDraft, useAccountSettingsState, useAgentState, useDigestState, useMailState, useSessionState } from './use-app-state'
-import { ConnectionErrorView, LaunchView, LoginView } from '../features/auth/auth-views'
+import { BootstrapView, ConnectionErrorView, LaunchView, LoginView } from '../features/auth/auth-views'
 import { MailView } from '../features/mail/mail-view'
 import { DigestView } from '../features/digest/digest-view'
 import { AgentView } from '../features/agent/agent-view'
@@ -22,7 +22,9 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
 }): React.JSX.Element {
   const api = window.emailAgent
   const { error, setError, activeUser, setActiveUser, loginName, setLoginName, loginPassword, setLoginPassword,
-    loginBusy, setLoginBusy, connectionStatus, setConnectionStatus, connectionBusy, setConnectionBusy,
+    loginBusy, setLoginBusy, bootstrapRequired, setBootstrapRequired, bootstrapConfirm, setBootstrapConfirm,
+    bootstrapBusy, setBootstrapBusy, demoMode, setDemoMode,
+    connectionStatus, setConnectionStatus, connectionBusy, setConnectionBusy,
     sessionEpoch } = useSessionState()
   const { accounts, setAccounts, accountId, setAccountId, accountSettingsOpen, setAccountSettingsOpen,
     accountOpen, setAccountOpen, accountBusy, setAccountBusy, accountForm, setAccountForm,
@@ -88,6 +90,14 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
   const activeAccount = accounts.find((account) => account.id === accountId)
 
   async function loadSession(): Promise<void> {
+    const bootstrap = await api.getBootstrapStatus()
+    setBootstrapRequired(bootstrap.required)
+    setDemoMode(bootstrap.demoMode)
+    if (bootstrap.required) {
+      setActiveUser(null)
+      setConnectionStatus('ready')
+      return
+    }
     const { username } = await api.getSession()
     setActiveUser(username)
     if (username) {
@@ -99,6 +109,27 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       setThemeMode(mode)
     }
     setConnectionStatus('ready')
+  }
+
+  async function bootstrap(): Promise<void> {
+    if (loginPassword !== bootstrapConfirm) {
+      setError('两次输入的密码不一致')
+      return
+    }
+    setBootstrapBusy(true)
+    setError('')
+    try {
+      await api.bootstrap(loginName, loginPassword)
+      sessionEpoch.current += 1
+      setBootstrapRequired(false)
+      setBootstrapConfirm('')
+      setLoginPassword('')
+      await loadSession()
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setBootstrapBusy(false)
+    }
   }
 
   async function login(): Promise<void> {
@@ -572,8 +603,11 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
 
   if (connectionStatus === 'loading') return <LaunchView />
   if (connectionStatus !== 'ready') return <ConnectionErrorView error={error} busy={connectionBusy} onRetry={() => void retryConnection()} />
+  if (bootstrapRequired) return <BootstrapView error={error} username={loginName} password={loginPassword}
+    confirm={bootstrapConfirm} busy={bootstrapBusy} onUsername={setLoginName} onPassword={setLoginPassword}
+    onConfirm={setBootstrapConfirm} onCreate={() => void bootstrap()} />
   if (!activeUser) return <LoginView error={error} username={loginName} password={loginPassword} busy={loginBusy}
-    onUsername={setLoginName} onPassword={setLoginPassword} onLogin={() => void login()} />
+    demoMode={demoMode} onUsername={setLoginName} onPassword={setLoginPassword} onLogin={() => void login()} />
 
   return <div className="app-shell">
     <aside className="sidebar">

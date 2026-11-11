@@ -72,7 +72,7 @@ export class BackendClient {
       throw new Error(body.error || '后端请求失败')
     }
     if (token !== this.token) throw new Error('登录状态已变化，请重试')
-    if (channel === 'auth:login') {
+    if (channel === 'auth:login' || channel === 'auth:bootstrap') {
       if (!/^[a-f0-9]{64}$/.test(body.result?.token)) throw new Error('后端登录响应无效')
       this.stopEvents(); this.token = body.result.token
       await this.saveToken().catch(() => this.emit('app:error', '登录成功，但登录状态未能保存，下次启动需重新登录'))

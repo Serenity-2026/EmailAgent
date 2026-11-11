@@ -35,6 +35,7 @@ services:
       SESSION_KEY: ${SESSION_KEY:?Set SESSION_KEY in .env}
       API_HOST: 0.0.0.0
       API_PORT: 3210
+      EMAILAGENT_DEMO_MODE: ${EMAILAGENT_DEMO_MODE:-0}
       TZ: Asia/Taipei
     ports:
       - "127.0.0.1:3210:3210"

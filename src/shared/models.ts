@@ -70,6 +70,11 @@ export interface AgentMailRef extends MailSummary {
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 
+export interface BootstrapStatus {
+  required: boolean
+  demoMode: boolean
+}
+
 export interface MailOverview {
   since: string
   received: number
@@ -137,6 +142,8 @@ export interface AgentProgress {
 }
 
 export interface DesktopApi {
+  getBootstrapStatus(): Promise<BootstrapStatus>
+  bootstrap(username: string, password: string): Promise<{ username: string }>
   getSession(): Promise<{ username: string | null }>
   login(username: string, password: string): Promise<{ username: string }>
   logout(): Promise<void>

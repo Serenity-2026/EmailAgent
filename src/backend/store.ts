@@ -18,6 +18,22 @@ export class MysqlStore {
     } catch { key.fill(0); throw new Error('账号或密码错误') }
   }
 
+  static async bootstrap(db: Database, username: string, password: string): Promise<MysqlStore> {
+    const name = username.trim()
+    if (!/^[A-Za-z0-9_]{3,32}$/.test(name)) throw new Error('账号需为 3–32 位字母、数字或下划线')
+    if (password.length < 8) throw new Error('初始密码至少需要 8 位')
+    const salt = randomBytes(16).toString('base64')
+    const key = keyFor(password, salt)
+    const data = emptyData()
+    try {
+      await db.bootstrapUser(encryptVault(name, salt, key, data))
+      return new MysqlStore(db, name, key, salt, data, 0)
+    } catch (error) {
+      key.fill(0)
+      throw error
+    }
+  }
+
   static async restore(db: Database, username: string, key: Buffer): Promise<MysqlStore> {
     const user = await db.user(username)
     if (!user) { key.fill(0); throw new Error('登录状态已失效，请重新登录') }

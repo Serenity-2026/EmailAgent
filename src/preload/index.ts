@@ -11,6 +11,8 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 }
 
 const api: DesktopApi = {
+  getBootstrapStatus: () => invoke('auth:bootstrap-status'),
+  bootstrap: (username, password) => invoke('auth:bootstrap', username, password),
   getSession: () => invoke('auth:session'),
   login: (username, password) => invoke('auth:login', username, password),
   logout: () => invoke('auth:logout'),

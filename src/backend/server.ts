@@ -3,11 +3,13 @@ import { API_CHANNELS, validateRpc } from '../shared/api'
 import { Database } from './database'
 import { MysqlStore } from './store'
 import { BackendContext } from './service'
+import { LoginAttemptLimiter } from './login-limiter'
 
 class HttpError extends Error { constructor(readonly status: number, message: string) { super(message) } }
 
-export function createBackendServer(db: Database): ReturnType<typeof createServer> {
+export function createBackendServer(db: Database, options: { loginLimiter?: LoginAttemptLimiter } = {}): ReturnType<typeof createServer> {
   const contexts = new Map<string, BackendContext>()
+  const loginLimiter = options.loginLimiter || new LoginAttemptLimiter()
   async function authenticate(token: string): Promise<BackendContext> {
     if (!/^[a-f0-9]{64}$/.test(token)) throw new HttpError(401, '请先登录')
     const session = await db.session(token)
@@ -65,9 +67,29 @@ export function createBackendServer(db: Database): ReturnType<typeof createServe
       if (!(API_CHANNELS as readonly string[]).includes(channel)) throw new HttpError(404, '接口不存在')
       const args = await bodyOf(request)
       validateRpc(channel, args)
+      if (channel === 'auth:bootstrap-status') {
+        send(response, 200, { result: await db.bootstrapStatus() }); return
+      }
+      if (channel === 'auth:bootstrap') {
+        const store = await MysqlStore.bootstrap(db, args[0] as string, args[1] as string)
+        const nextToken = await store.createSession()
+        contexts.set(nextToken, new BackendContext(store, nextToken))
+        send(response, 200, { result: { username: store.username, token: nextToken } }); return
+      }
       if (channel === 'auth:login') {
+        const source = request.socket.remoteAddress || 'unknown'
+        const username = args[0] as string
+        if (loginLimiter.isBlocked(source, username)) throw new HttpError(429, '登录尝试过于频繁，请稍后再试')
         if (token) { await db.revoke(token); contexts.get(token)?.invalidate(false); contexts.delete(token) }
-        const store = await MysqlStore.login(db, args[0] as string, args[1] as string)
+        let store: MysqlStore
+        try {
+          store = await MysqlStore.login(db, username, args[1] as string)
+          loginLimiter.recordSuccess(source, username)
+        } catch (error) {
+          loginLimiter.recordFailure(source, username)
+          if (loginLimiter.isBlocked(source, username)) throw new HttpError(429, '登录尝试过于频繁，请稍后再试')
+          throw error
+        }
         const nextToken = await store.createSession()
         contexts.set(nextToken, new BackendContext(store, nextToken))
         send(response, 200, { result: { username: store.username, token: nextToken } }); return
