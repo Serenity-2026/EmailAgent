@@ -23,6 +23,7 @@ export interface MailSummary {
 }
 
 export interface MailDetail extends MailSummary {
+  uidValidity: string
   to: string
   text: string
   html?: string
@@ -56,6 +57,7 @@ export interface DailyDigest {
   date: string
   content: string
   sources: MailSummary[]
+  warnings: string[]
 }
 
 export interface AgentMailRef extends MailSummary {

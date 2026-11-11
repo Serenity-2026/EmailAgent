@@ -363,7 +363,7 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       ...emptyDraft(accountId),
       to: recipient,
       subject: reply && detail ? (detail.subject.startsWith('Re:') ? detail.subject : `Re: ${detail.subject}`) : '',
-      replyTo: reply && detail ? { uid: detail.uid, folder: detail.folder } : undefined
+      replyTo: reply && detail ? { uid: detail.uid, folder: detail.folder, uidValidity: detail.uidValidity } : undefined
     })
     setComposePreview(false)
     setComposeOpen(true)

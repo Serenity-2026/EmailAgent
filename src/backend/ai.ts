@@ -116,7 +116,7 @@ export async function generateDigest(
     subject: mail.subject, date: mail.date, unread: mail.unread
   }))
   if (messages.length === 0) {
-    return { date, content: '今天暂无新邮件。', sources: [] }
+    return { date, content: '今天暂无新邮件。', sources: [], warnings: [] }
   }
   const input = messages.map((mail, index) => ({
     number: index + 1,
@@ -130,5 +130,5 @@ export async function generateDigest(
       '用中文输出三个小节：总体概览、重要邮件、待处理事项。' +
       '仅依据所给邮件概括事实；提到具体邮件时用 [序号] 标注来源。不要声称已经回复或发送。',
     JSON.stringify(input))
-  return { date, content, sources }
+  return { date, content, sources, warnings: [] }
 }

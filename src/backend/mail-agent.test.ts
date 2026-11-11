@@ -3,7 +3,8 @@ import type { AgentAction, AgentMailRef } from '../shared/models'
 import type { StoredAccount } from '../shared/vault'
 
 const state = vi.hoisted(() => ({
-  uidValidity: 55n, archive: false, exists: true, calls: [] as string[], searchCount: 0, connectionError: false
+  uidValidity: 55n, archive: false, exists: true, calls: [] as string[], searchCount: 0, connectionError: false,
+  sourceSize: 100, missingSourceUids: new Set<number>()
 }))
 
 vi.mock('imapflow', () => ({
@@ -36,24 +37,30 @@ vi.mock('imapflow', () => ({
       this.mailbox = { uidValidity: state.uidValidity }
       return { release: () => state.calls.push('release') }
     }
-    async fetchOne(): Promise<false | { uid: number; size: number; source: Buffer }> {
-      state.calls.push('fetchOne')
-      return state.exists ? { uid: 7, size: 100, source: Buffer.from(
-        'From: teacher@example.com\r\nSubject: Test\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n周五提交报告。') } : false
+    async fetchOne(uid = 7, query: { source?: boolean } = {}): Promise<false | Record<string, unknown>> {
+      state.calls.push(`fetchOne:${uid}:${query.source ? 'source' : 'metadata'}`)
+      if (!state.exists || (query.source && state.missingSourceUids.has(uid))) return false
+      const metadata = { uid, size: state.sourceSize,
+        envelope: { subject: `Mail ${uid}`, from: [{ address: 'teacher@example.com' }] },
+        flags: new Set(), internalDate: new Date('2026-09-25T00:00:00.000Z') }
+      return query.source ? { uid, source: Buffer.from(
+        'From: teacher@example.com\r\nSubject: Test\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n周五提交报告。') } : metadata
     }
     async messageFlagsAdd(): Promise<boolean> { state.calls.push('markRead'); return true }
     async messageFlagsRemove(): Promise<boolean> { state.calls.push('markUnread'); return true }
     async messageMove(): Promise<boolean> { state.calls.push('archive'); return true }
     async search(): Promise<number[]> { return Array.from({ length: state.searchCount }, (_, index) => index + 1) }
-    async fetchAll(uids: number[]): Promise<Array<Record<string, unknown>>> {
+    async fetchAll(input: number[] | string): Promise<Array<Record<string, unknown>>> {
+      const uids = typeof input === 'string' ? input.split(',').map(Number) : input
       state.calls.push(`fetchAll:${uids.length}`)
-      return uids.map((uid) => ({ uid, envelope: { subject: `Mail ${uid}`, from: [{ address: 'teacher@example.com' }] },
+      return uids.map((uid) => ({ uid, size: state.sourceSize,
+        envelope: { subject: `Mail ${uid}`, from: [{ address: 'teacher@example.com' }] },
         flags: new Set(), internalDate: new Date('2026-09-25T00:00:00.000Z') }))
     }
   }
 }))
 
-import { executeAgentAction, readAgentMailBatch, searchAgentMail } from './mail'
+import { executeAgentAction, getMail, MAX_INTERACTIVE_MAIL_BYTES, readAgentMailBatch, searchAgentMail, todayMail } from './mail'
 
 const account: StoredAccount = { id: 'one', provider: 'qq', address: 'student@qq.com', authorizationCode: 'example' }
 const mail: AgentMailRef = {
@@ -67,6 +74,8 @@ beforeEach(() => {
   state.exists = true
   state.searchCount = 0
   state.connectionError = false
+  state.sourceSize = 100
+  state.missingSourceUids = new Set()
   state.calls = []
 })
 
@@ -80,6 +89,32 @@ describe('Agent IMAP access', () => {
   it('reads mail without setting the Seen flag', async () => {
     const result = await readAgentMailBatch(account, [mail])
     expect(result[0].text).toContain('周五提交报告')
+    expect(state.calls).toContain('lock:INBOX:true')
+    expect(state.calls).not.toContain('markRead')
+  })
+
+  it('returns UIDVALIDITY for normal replies and rejects a stale reply identity', async () => {
+    const detail = await getMail(account, 'INBOX', 7, false, false)
+    expect(detail.uidValidity).toBe('55')
+    state.uidValidity = 56n
+    await expect(getMail(account, 'INBOX', 7, false, false, detail.uidValidity)).rejects.toThrow('文件夹已变化')
+  })
+
+  it('rejects oversized interactive MIME before reading its source or marking it seen', async () => {
+    state.sourceSize = MAX_INTERACTIVE_MAIL_BYTES + 1
+    await expect(getMail(account, 'INBOX', 7)).rejects.toThrow('超过 20 MB')
+    expect(state.calls).not.toContain('fetchOne:7:source')
+    expect(state.calls).not.toContain('markRead')
+  })
+
+  it('reads a daily batch through one connection and reports individual failures without marking mail seen', async () => {
+    state.searchCount = 3
+    state.missingSourceUids.add(2)
+    const result = await todayMail(account, new Date('2026-09-24T00:00:00.000Z'))
+    expect(result.messages.map((item) => item.uid)).toEqual([1, 3])
+    expect(result.warnings).toHaveLength(1)
+    expect(result.warnings[0]).toContain('Mail 2')
+    expect(state.calls.filter((call) => call === 'connect')).toHaveLength(1)
     expect(state.calls).toContain('lock:INBOX:true')
     expect(state.calls).not.toContain('markRead')
   })

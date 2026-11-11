@@ -9,6 +9,7 @@ export function DigestView({ digest, loading, onOpenSource }: {
     <h2>{digest?.date || '今日'}邮件摘要</h2>
     {loading ? <div className="top-spinner"><Spin /></div> : digest ? <>
       <div className="digest-body">{digest.content}</div>
+      {digest.warnings.map((warning, index) => <div key={index} className="agent-warning">{warning}</div>)}
       {digest.sources.length > 0 && <>
         <div className="reader-divider" />
         <h3>来源邮件</h3>

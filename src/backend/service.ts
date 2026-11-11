@@ -55,12 +55,21 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
     const settings = store.ai
     const selected = accountIds.map(accountById)
     if (selected.length === 0) throw new Error('请先添加邮箱账户')
-    const mail = (await Promise.all(selected.map((account) => todayMail(account, todayStart()))))
-      .flat().sort((a, b) => a.date.localeCompare(b.date))
+    const results = await Promise.allSettled(selected.map((account) => todayMail(account, todayStart())))
+    const warnings: string[] = []
+    const mail = results.flatMap((result, index) => {
+      if (result.status === 'rejected') {
+        warnings.push(`${selected[index].address} 的今日邮件读取失败`)
+        return []
+      }
+      warnings.push(...result.value.warnings)
+      return result.value.messages
+    }).sort((a, b) => a.date.localeCompare(b.date))
+    if (results.every((result) => result.status === 'rejected')) throw new Error('所有邮箱的今日邮件读取失败，请检查连接')
     requireSession(version)
     const digest = await summarize(settings, localDate(), mail)
     requireSession(version)
-    return digest
+    return { ...digest, warnings }
   }
 
   handlers.set('auth:create', (username: string, password: string) => store.addUser(username, password))

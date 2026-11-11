@@ -5,6 +5,9 @@ import type { AgentAction, AgentMailRef, MailDetail, MailDraft, MailSummary } fr
 import { PROVIDERS, validateRecipient } from './providers'
 import type { StoredAccount } from '../shared/vault'
 
+export const MAX_INTERACTIVE_MAIL_BYTES = 20_000_000
+export const MAX_AI_MAIL_BYTES = 5_000_000
+
 function clientFor(account: StoredAccount): ImapFlow {
   const client = new ImapFlow({
     host: PROVIDERS[account.provider].imap,
@@ -86,45 +89,61 @@ export async function getMail(account: StoredAccount, folder: string, uid: numbe
   return withImap(account, async (client) => {
     const lock = await client.getMailboxLock(folder)
     try {
-      if (expectedUidValidity && (!client.mailbox || client.mailbox.uidValidity.toString() !== expectedUidValidity)) {
-        throw new Error('原邮件所在文件夹已变化，请重新检索')
-      }
-      const message = await client.fetchOne(uid, {
-        uid: true,
-        envelope: true,
-        flags: true,
-        internalDate: true,
-        source: true
-      }, { uid: true })
-      if (!message || !message.source) throw new Error('邮件不存在或已被移走')
-      const parsed = await simpleParser(message.source)
-      let inlineBytes = 0
-      const inlineImages = includeRichBody ? parsed.attachments.flatMap((attachment) => {
-        const contentId = attachment.contentId?.replace(/^<|>$/g, '')
-        if (!contentId || !/^image\/(?:png|jpeg|gif|webp)$/i.test(attachment.contentType) ||
-          attachment.content.length > 2_000_000 || inlineBytes + attachment.content.length > 8_000_000) return []
-        inlineBytes += attachment.content.length
-        return [{ contentId, contentType: attachment.contentType.toLowerCase(), base64: attachment.content.toString('base64') }]
-      }) : []
-      if (markRead) await client.messageFlagsAdd(uid.toString(), ['\\Seen'], { uid: true })
-      const summary = summaryOf(account, folder, message)
-      return {
-        ...summary,
-        unread: markRead ? false : summary.unread,
-        to: Array.isArray(parsed.to) ? parsed.to.map((address) => address.text).join(', ') : parsed.to?.text || '',
-        text: parsed.text || '（这封邮件没有纯文本正文）',
-        html: includeRichBody && typeof parsed.html === 'string' ? parsed.html : undefined,
-        inlineImages,
-        messageId: parsed.messageId,
-        references: parsed.references ? (Array.isArray(parsed.references) ? parsed.references : [parsed.references]) : undefined,
-        attachmentNames: parsed.attachments.filter((attachment) =>
-          attachment.contentDisposition === 'attachment' || !attachment.contentId)
-          .map((attachment) => attachment.filename || '未命名附件')
-      }
+      return await readMailFromOpenMailbox(client, account, folder, uid, {
+        markRead, includeRichBody, expectedUidValidity, maxBytes: MAX_INTERACTIVE_MAIL_BYTES
+      })
     } finally {
       lock.release()
     }
   })
+}
+
+async function readMailFromOpenMailbox(client: ImapFlow, account: StoredAccount, folder: string, uid: number, options: {
+  markRead: boolean
+  includeRichBody: boolean
+  expectedUidValidity?: string
+  maxBytes: number
+  metadata?: FetchMessageObject
+}): Promise<MailDetail> {
+  const uidValidity = client.mailbox && client.mailbox.uidValidity.toString()
+  if (!uidValidity) throw new Error('邮箱文件夹缺少 UIDVALIDITY')
+  if (options.expectedUidValidity && uidValidity !== options.expectedUidValidity) {
+    throw new Error('原邮件所在文件夹已变化，请重新检索')
+  }
+  const metadata = options.metadata || await client.fetchOne(uid, {
+    uid: true, envelope: true, flags: true, internalDate: true, size: true
+  }, { uid: true })
+  if (!metadata) throw new Error('邮件不存在或已被移走')
+  if ((metadata.size || 0) > options.maxBytes) {
+    throw new Error(`邮件超过 ${Math.floor(options.maxBytes / 1_000_000)} MB，未读取正文`)
+  }
+  const source = await client.fetchOne(uid, { source: true }, { uid: true })
+  if (!source || !source.source) throw new Error('邮件不存在或已被移走')
+  const parsed = await simpleParser(source.source)
+  let inlineBytes = 0
+  const inlineImages = options.includeRichBody ? parsed.attachments.flatMap((attachment) => {
+    const contentId = attachment.contentId?.replace(/^<|>$/g, '')
+    if (!contentId || !/^image\/(?:png|jpeg|gif|webp)$/i.test(attachment.contentType) ||
+      attachment.content.length > 2_000_000 || inlineBytes + attachment.content.length > 8_000_000) return []
+    inlineBytes += attachment.content.length
+    return [{ contentId, contentType: attachment.contentType.toLowerCase(), base64: attachment.content.toString('base64') }]
+  }) : []
+  if (options.markRead) await client.messageFlagsAdd(uid.toString(), ['\\Seen'], { uid: true })
+  const summary = summaryOf(account, folder, metadata)
+  return {
+    ...summary,
+    uidValidity,
+    unread: options.markRead ? false : summary.unread,
+    to: Array.isArray(parsed.to) ? parsed.to.map((address) => address.text).join(', ') : parsed.to?.text || '',
+    text: parsed.text || '（这封邮件没有纯文本正文）',
+    html: options.includeRichBody && typeof parsed.html === 'string' ? parsed.html : undefined,
+    inlineImages,
+    messageId: parsed.messageId,
+    references: parsed.references ? (Array.isArray(parsed.references) ? parsed.references : [parsed.references]) : undefined,
+    attachmentNames: parsed.attachments.filter((attachment) =>
+      attachment.contentDisposition === 'attachment' || !attachment.contentId)
+      .map((attachment) => attachment.filename || '未命名附件')
+  }
 }
 
 export async function getSentFolder(account: StoredAccount): Promise<string | null> {
@@ -170,30 +189,38 @@ export async function sendMail(account: StoredAccount, draft: MailDraft): Promis
   }
 }
 
-export async function todayMail(account: StoredAccount, start: Date): Promise<MailDetail[]> {
-  const summaries = await withImap(account, async (client) => {
-    const lock = await client.getMailboxLock('INBOX')
+export async function todayMail(account: StoredAccount, start: Date): Promise<{ messages: MailDetail[]; warnings: string[] }> {
+  return withImap(account, async (client) => {
+    const lock = await client.getMailboxLock('INBOX', { readOnly: true })
     try {
       const found = await client.search({ since: start }, { uid: true })
-      if (!found || !Array.isArray(found) || found.length === 0) return []
+      if (!found || !Array.isArray(found) || found.length === 0) return { messages: [], warnings: [] }
       const uids = found.slice(-30)
-      const messages = await client.fetchAll(uids.join(','), {
+      const metadata = await client.fetchAll(uids.join(','), {
         uid: true,
         envelope: true,
         flags: true,
-        internalDate: true
+        internalDate: true,
+        size: true
       }, { uid: true })
-      return messages.map((message) => summaryOf(account, 'INBOX', message))
-        .filter((message) => new Date(message.date) >= start)
+      const selected = metadata.filter((message) => new Date(summaryOf(account, 'INBOX', message).date) >= start)
+      const messages: MailDetail[] = []
+      const warnings: string[] = []
+      for (const message of selected) {
+        try {
+          messages.push(await readMailFromOpenMailbox(client, account, 'INBOX', message.uid, {
+            markRead: false, includeRichBody: false, maxBytes: MAX_AI_MAIL_BYTES, metadata: message
+          }))
+        } catch (error) {
+          const subject = summaryOf(account, 'INBOX', message).subject
+          warnings.push(`${account.address} · ${subject}：${error instanceof Error ? error.message : '读取失败'}`)
+        }
+      }
+      return { messages, warnings }
     } finally {
       lock.release()
     }
   })
-  const details: MailDetail[] = []
-  for (const summary of summaries) {
-    details.push(await getMail(account, 'INBOX', summary.uid, false, false))
-  }
-  return details
 }
 
 export interface AgentSearchFilters {
