@@ -86,3 +86,14 @@ npm run backend:start
 - 亮色、暗色和系统主题偏好存于当前用户数据中。
 
 产品规格见 [SPEC.md](SPEC.md)，数据表、API 与业务边界见 [doc/architecture.md](doc/architecture.md)。
+
+## 版本更新记录
+
+### 0.1.1 - Q0 可复现质量门禁（2026-11-11）
+
+- 新增 GitHub Actions 验证流程，固定执行依赖安装、类型检查、单元测试、MySQL 隔离集成测试和生产构建。
+- `npm run test:backend` 改用 Node 启动脚本，可在 Windows、macOS 和 Linux 使用；存在 `.env` 时自动加载，本机无 `.env` 时可直接使用 CI 环境变量。
+- 新增 RPC 参数边界测试，以及登录、邮箱列表、写信预览和 Agent 整理确认的 Renderer 冒烟测试。
+- 普通验证需要 Node.js 22 及 npm，执行 `npm ci && npm run typecheck && npm test && npm run build`。
+- 数据库集成测试额外需要可连接的 MySQL 8.4 和 `MYSQL_ROOT_PASSWORD`；测试只创建并删除随机命名的隔离数据库。
+- `npm run package:mac` 仍需在 macOS 上执行，并需要 Electron 运行时及项目依赖已完成安装。

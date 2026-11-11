@@ -1,0 +1,35 @@
+import { describe, expect, it } from 'vitest'
+import { API_CHANNELS, validateRpc } from './api'
+
+describe('RPC request validation', () => {
+  it('keeps every declared channel covered by the validator', () => {
+    const validArguments: Record<(typeof API_CHANNELS)[number], unknown[]> = {
+      'auth:session': [], 'auth:login': ['dmc', 'password'], 'auth:logout': [],
+      'auth:create': ['student', 'password'], 'auth:password': ['old-password', 'new-password'],
+      'accounts:list': [], 'accounts:add': [{ provider: 'qq', address: 'student@qq.com', authorizationCode: 'code' }],
+      'accounts:remove': ['account'], 'mail:list': ['account', 'INBOX'], 'mail:get': ['account', 'INBOX', 1, false],
+      'mail:sent-folder': ['account'], 'mail:send': [{ accountId: 'account', to: 'one@example.com', subject: '主题', text: '正文' }],
+      'ai:settings:get': [], 'ai:models': ['https://example.com/v1', 'key'],
+      'ai:settings:save': [{ baseUrl: 'https://example.com/v1', model: 'model', apiKey: 'key', dailyTime: '09:00', autoDaily: false }],
+      'ai:settings:test': [], 'ai:draft': ['写一封邮件', 'account'], 'ai:digest': [['account']],
+      'agent:history': [], 'agent:overview': [], 'agent:run': ['总结邮件'], 'agent:confirm': ['proposal'],
+      'agent:clear': [], 'theme:get': [], 'theme:set': ['dark']
+    }
+    expect(Object.keys(validArguments).sort()).toEqual([...API_CHANNELS].sort())
+    for (const channel of API_CHANNELS) expect(() => validateRpc(channel, validArguments[channel])).not.toThrow()
+  })
+
+  it('rejects extra arguments, invalid UIDs and oversized bounded inputs', () => {
+    expect(() => validateRpc('auth:session', ['extra'])).toThrow('请求参数无效')
+    expect(() => validateRpc('mail:get', ['account', 'INBOX', 0])).toThrow('请求参数无效')
+    expect(() => validateRpc('agent:run', ['x'.repeat(10_001)])).toThrow('请求参数无效')
+    expect(() => validateRpc('ai:digest', [Array.from({ length: 101 }, () => 'account')])).toThrow('请求参数无效')
+  })
+
+  it('accepts a reply identity only when all nested values are valid', () => {
+    const draft = { accountId: 'account', to: 'one@example.com', subject: '回复', text: '正文',
+      replyTo: { uid: 7, folder: 'INBOX', uidValidity: '22' } }
+    expect(() => validateRpc('mail:send', [draft])).not.toThrow()
+    expect(() => validateRpc('mail:send', [{ ...draft, replyTo: { ...draft.replyTo, uid: -1 } }])).toThrow('请求参数无效')
+  })
+})

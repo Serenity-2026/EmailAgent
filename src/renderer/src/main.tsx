@@ -20,7 +20,7 @@ const dateText = (date: string): string => new Intl.DateTimeFormat('zh-CN', {
 }).format(new Date(date))
 const RadarChart = React.lazy(async () => ({ default: (await import('@ant-design/plots')).Radar }))
 
-function EmailApp({ themeMode, setThemeMode, dark }: {
+export function EmailApp({ themeMode, setThemeMode, dark }: {
   themeMode: ThemeMode; setThemeMode: (mode: ThemeMode) => void; dark: boolean
 }): React.JSX.Element {
   const api = window.emailAgent
@@ -948,4 +948,5 @@ function AppRoot(): React.JSX.Element {
   </ConfigProvider>
 }
 
-createRoot(document.getElementById('root')!).render(<AppRoot />)
+const rootElement = document.getElementById('root')
+if (rootElement) createRoot(rootElement).render(<AppRoot />)
