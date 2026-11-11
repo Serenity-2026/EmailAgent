@@ -78,7 +78,7 @@ describe('renderer critical paths', () => {
 
   it('shows the login path for an unauthenticated session', async () => {
     window.emailAgent = apiFor(null)
-    const { EmailApp } = await import('./main')
+    const { EmailApp } = await import('./app/email-app')
     const appRoot = createRoot(container)
     root = appRoot
     await act(async () => appRoot.render(<EmailApp themeMode="system" setThemeMode={() => undefined} dark={false} />))
@@ -89,7 +89,7 @@ describe('renderer critical paths', () => {
 
   it('reaches the mailbox, compose preview and Agent confirmation paths', async () => {
     window.emailAgent = apiFor('dmc')
-    const { EmailApp } = await import('./main')
+    const { EmailApp } = await import('./app/email-app')
     const appRoot = createRoot(container)
     root = appRoot
     await act(async () => appRoot.render(<EmailApp themeMode="system" setThemeMode={() => undefined} dark={false} />))

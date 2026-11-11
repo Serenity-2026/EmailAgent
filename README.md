@@ -97,3 +97,11 @@ npm run backend:start
 - 普通验证需要 Node.js 22 及 npm，执行 `npm ci && npm run typecheck && npm test && npm run build`。
 - 数据库集成测试额外需要可连接的 MySQL 8.4 和 `MYSQL_ROOT_PASSWORD`；测试只创建并删除随机命名的隔离数据库。
 - `npm run package:mac` 仍需在 macOS 上执行，并需要 Electron 运行时及项目依赖已完成安装。
+
+### 0.1.2 - R1 Renderer 领域模块化（2026-11-11）
+
+- React 启动入口缩减为只挂载应用根组件，主题适配与应用壳层移入 `src/renderer/src/app/`。
+- 登录与恢复、邮件阅读与写信、每日摘要、Agent 对话、账户和 AI 设置分别移入 `src/renderer/src/features/` 下的独立领域模块。
+- 会话、账户设置、邮件、摘要和 Agent 状态由领域 hook 管理，继续保留会话 epoch 防止登出后的异步结果串入新会话。
+- 原单一样式文件拆分为基础壳层、邮件、Agent、弹窗和暗色主题文件；界面类名和视觉行为保持不变。
+- Renderer 冒烟测试继续覆盖登录、邮件列表、写信预览和 Agent 整理确认，拆分未改变桌面 API 契约。

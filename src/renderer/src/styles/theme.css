@@ -1,0 +1,37 @@
+:root[data-theme='dark'] { color-scheme: dark; color: #e6eaf3; background: #0e1422; }
+:root[data-theme='dark'] .sidebar { background: #151e30; border-color: #29364d; }
+:root[data-theme='dark'] .brand, :root[data-theme='dark'] .topbar h1,
+:root[data-theme='dark'] .reader-card h2 { color: #eef2fa; }
+:root[data-theme='dark'] .sidebar-label, :root[data-theme='dark'] .topbar p { color: #99a9c3; }
+:root[data-theme='dark'] .account-trigger { color: #d9e2f2; }
+:root[data-theme='dark'] .account-trigger:hover { background: #263b60; }
+:root[data-theme='dark'] .nav-item, :root[data-theme='dark'] .account-item { color: #b4c0d4; }
+:root[data-theme='dark'] .nav-item:hover, :root[data-theme='dark'] .account-item:hover,
+:root[data-theme='dark'] .nav-item.active, :root[data-theme='dark'] .account-item.active,
+:root[data-theme='dark'] .agent-history-item:hover, :root[data-theme='dark'] .agent-history-item.active { background: #263b60; color: #a9c2ff; }
+:root[data-theme='dark'] .topbar, :root[data-theme='dark'] .mail-list,
+:root[data-theme='dark'] .mail-list-head, :root[data-theme='dark'] .mail-row,
+:root[data-theme='dark'] .agent-layout, :root[data-theme='dark'] .agent-compose { background: #182236; border-color: #2b3850; }
+:root[data-theme='dark'] .mail-row { color: #e1e8f5; }
+:root[data-theme='dark'] .mail-row:hover, :root[data-theme='dark'] .mail-row.selected { background: #253753; }
+:root[data-theme='dark'] .mail-row-subject, :root[data-theme='dark'] .reader-meta,
+:root[data-theme='dark'] .agent-history-item { color: #acbad0; }
+:root[data-theme='dark'] .reader, :root[data-theme='dark'] .agent-chat,
+:root[data-theme='dark'] .launch-screen, :root[data-theme='dark'] .recovery-shell { background: #0e1422; }
+:root[data-theme='dark'] .reader-card, :root[data-theme='dark'] .digest-card,
+:root[data-theme='dark'] .agent-message, :root[data-theme='dark'] .agent-proposal,
+:root[data-theme='dark'] .recovery-card { background: #192439; border-color: #2c3a52; color: #e1e8f5; }
+:root[data-theme='dark'] .agent-message.user { background: #24395f; }
+:root[data-theme='dark'] .agent-overview { background: #192439; border-color: #2c3a52; }
+:root[data-theme='dark'] .agent-overview-head { color: #d9e2f2; }
+:root[data-theme='dark'] .mail-body, :root[data-theme='dark'] .digest-body,
+:root[data-theme='dark'] .reader-meta strong, :root[data-theme='dark'] .recovery-card h1,
+:root[data-theme='dark'] .agent-proposal strong { color: #e1e8f5; }
+:root[data-theme='dark'] .reader-divider { background: #2b3850; }
+:root[data-theme='dark'] .agent-history, :root[data-theme='dark'] .agent-compose { border-color: #2b3850; }
+:root[data-theme='dark'] .agent-sources button, :root[data-theme='dark'] .source-row,
+:root[data-theme='dark'] .compose-preview { background: #24334d; border-color: #354866; color: #b3c9ff; }
+:root[data-theme='dark'] .overview-metrics div, :root[data-theme='dark'] .remote-images-note { background: #24334d; }
+:root[data-theme='dark'] .overview-people h3, :root[data-theme='dark'] .overview-chart h3,
+:root[data-theme='dark'] .overview-people p { color: #d9e2f2; }
+:root[data-theme='dark'] .overview-metrics strong { color: #a9c2ff; }
