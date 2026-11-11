@@ -42,7 +42,7 @@ export async function listAiModels(baseUrl: string, apiKey: string): Promise<str
   return [...new Set(models)].sort((a, b) => a.localeCompare(b))
 }
 
-export async function complete(settings: AiSettingsInput, system: string, user: string): Promise<string> {
+export async function complete(settings: AiSettingsInput, system: string, user: string, signal?: AbortSignal): Promise<string> {
   validateAiSettings(settings)
   const endpoint = `${settings.baseUrl.replace(/\/+$/, '')}/chat/completions`
   const response = await fetch(endpoint, {
@@ -59,7 +59,7 @@ export async function complete(settings: AiSettingsInput, system: string, user: 
         { role: 'user', content: user }
       ]
     }),
-    signal: AbortSignal.timeout(45_000)
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(45_000)]) : AbortSignal.timeout(45_000)
   })
   if (!response.ok) throw new Error(`AI 服务请求失败（HTTP ${response.status}）`)
   const result = await response.json() as {

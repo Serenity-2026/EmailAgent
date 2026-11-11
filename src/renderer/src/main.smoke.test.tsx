@@ -36,6 +36,7 @@ function apiFor(session: string | null, bootstrapRequired = false, demoMode = fa
     testAiConnection: vi.fn(async () => undefined), generateDraft: vi.fn(), generateDigest: vi.fn(),
     onDailyDigest: vi.fn(() => () => undefined), listAgentConversations: vi.fn(async () => []),
     runAgent: vi.fn(async () => ({ conversation, proposal, scope: '近期', truncated: false, warnings: [] })),
+    cancelAgentJob: vi.fn(async (jobId) => ({ jobId, status: 'cancelling' as const })),
     confirmAgentProposal: vi.fn(), clearAgentHistory: vi.fn(async () => undefined),
     onAgentProgress: vi.fn(() => () => undefined), onAppError: vi.fn(() => () => undefined),
     getAgentOverview: vi.fn(async () => ({ since: new Date().toISOString(), received: 1, sent: 0, sampled: false,

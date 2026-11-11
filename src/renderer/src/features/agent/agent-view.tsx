@@ -6,7 +6,7 @@ const RadarChart = React.lazy(async () => ({ default: (await import('@ant-design
 
 export function AgentView({ conversations, conversationId, activeConversation, busy, status, proposal,
   prompt, overview, overviewLoading, overviewError, dark, accountCount, messagesRef,
-  onClear, onSelectConversation, onLoadOverview, onOpenSource, onOpenDraft, onConfirm, onPrompt, onRun }: {
+  onClear, onSelectConversation, onLoadOverview, onOpenSource, onOpenDraft, onConfirm, onPrompt, onRun, onCancel }: {
   conversations: AgentConversation[]; conversationId: string; activeConversation?: AgentConversation
   busy: boolean; status: string; proposal: AgentProposal | null; prompt: string
   overview: MailOverview | null; overviewLoading: boolean; overviewError: string; dark: boolean
@@ -14,11 +14,12 @@ export function AgentView({ conversations, conversationId, activeConversation, b
   onClear: () => void; onSelectConversation: (id: string) => void; onLoadOverview: () => void
   onOpenSource: (source: MailSummary) => void; onOpenDraft: (draft: MailDraft) => void
   onConfirm: (proposal: AgentProposal) => Promise<void>; onPrompt: (value: string) => void; onRun: () => void
+  onCancel: () => void
 }): React.JSX.Element {
   return <section className="agent-layout">
     <div className="agent-history">
       <div className="agent-history-head"><span>对话记录</span><button onClick={onClear}
-        disabled={!conversations.length || busy}>清除</button></div>
+        disabled={!conversations.length && !busy}>清除</button></div>
       {conversations.map((conversation) => <button key={conversation.id}
         className={`agent-history-item ${conversation.id === conversationId ? 'active' : ''}`}
         onClick={() => onSelectConversation(conversation.id)}>
@@ -75,7 +76,7 @@ export function AgentView({ conversations, conversationId, activeConversation, b
             {result.error ? `（${result.error}）` : ''}
           </div>)}
         </div>)}
-        {busy && <div className="agent-progress"><Spin size="small" />{status}</div>}
+        {status && <div className="agent-progress">{busy && <Spin size="small" />}{status}</div>}
         {proposal && <div className="agent-proposal">
           <strong>待确认的整理操作</strong>
           {proposal.actions.map((action, index) => <div key={index}>
@@ -96,7 +97,8 @@ export function AgentView({ conversations, conversationId, activeConversation, b
         <Input.TextArea value={prompt} rows={3} maxLength={1000}
           placeholder="例如：找出最近导师关于课程报告的邮件，总结待办并起草回复"
           onChange={(event) => onPrompt(event.target.value)} />
-        <Button type="primary" loading={busy} disabled={!prompt.trim() || !accountCount} onClick={onRun}>执行任务</Button>
+        {busy ? <Button danger onClick={onCancel}>取消任务</Button> :
+          <Button type="primary" disabled={!prompt.trim() || !accountCount} onClick={onRun}>执行任务</Button>}
       </div>
     </div>
   </section>

@@ -93,6 +93,8 @@ export function useAgentState() {
   const [agentConversationId, setAgentConversationId] = useState('')
   const [agentPrompt, setAgentPrompt] = useState('')
   const [agentBusy, setAgentBusy] = useState(false)
+  const [agentJobId, setAgentJobId] = useState('')
+  const agentJobIdRef = useRef('')
   const [agentStatus, setAgentStatus] = useState('')
   const [agentProposal, setAgentProposal] = useState<AgentProposal | null>(null)
   const [overview, setOverview] = useState<MailOverview | null>(null)
@@ -102,7 +104,8 @@ export function useAgentState() {
   const agentScrollState = useRef({ view: '', conversationId: '' })
   const overviewShown = useRef(false)
   return { agentConversations, setAgentConversations, agentConversationId, setAgentConversationId,
-    agentPrompt, setAgentPrompt, agentBusy, setAgentBusy, agentStatus, setAgentStatus,
+    agentPrompt, setAgentPrompt, agentBusy, setAgentBusy, agentJobId, setAgentJobId, agentJobIdRef,
+    agentStatus, setAgentStatus,
     agentProposal, setAgentProposal, overview, setOverview, overviewLoading, setOverviewLoading,
     overviewError, setOverviewError, agentMessagesRef, agentScrollState, overviewShown }
 }

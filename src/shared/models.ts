@@ -137,8 +137,14 @@ export interface AgentConfirmResult {
 }
 
 export interface AgentProgress {
-  stage: 'planning' | 'searching' | 'reading' | 'answering'
+  jobId: string
+  stage: 'planning' | 'searching' | 'reading' | 'answering' | 'completed' | 'cancelled' | 'failed'
   detail: string
+}
+
+export interface AgentCancelResult {
+  jobId: string
+  status: 'cancelling' | 'idle'
 }
 
 export interface DesktopApi {
@@ -165,7 +171,8 @@ export interface DesktopApi {
   generateDigest(accountIds: string[]): Promise<DailyDigest>
   onDailyDigest(listener: (digest: DailyDigest) => void): () => void
   listAgentConversations(): Promise<AgentConversation[]>
-  runAgent(prompt: string, conversationId?: string): Promise<AgentRunResult>
+  runAgent(prompt: string, conversationId: string | undefined, jobId: string): Promise<AgentRunResult>
+  cancelAgentJob(jobId: string): Promise<AgentCancelResult>
   confirmAgentProposal(proposalId: string): Promise<AgentConfirmResult>
   clearAgentHistory(): Promise<void>
   onAgentProgress(listener: (progress: AgentProgress) => void): () => void

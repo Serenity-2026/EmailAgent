@@ -80,7 +80,10 @@ export function createBackendServer(db: Database, options: { loginLimiter?: Logi
         const source = request.socket.remoteAddress || 'unknown'
         const username = args[0] as string
         if (loginLimiter.isBlocked(source, username)) throw new HttpError(429, '登录尝试过于频繁，请稍后再试')
-        if (token) { await db.revoke(token); contexts.get(token)?.invalidate(false); contexts.delete(token) }
+        if (token) {
+          contexts.get(token)?.cancelCurrentAgent()
+          await db.revoke(token); contexts.get(token)?.invalidate(false); contexts.delete(token)
+        }
         let store: MysqlStore
         try {
           store = await MysqlStore.login(db, username, args[1] as string)
@@ -100,6 +103,7 @@ export function createBackendServer(db: Database, options: { loginLimiter?: Logi
         send(response, 200, { result: { username: context.store.username } }); return
       }
       if (channel === 'auth:logout') {
+        context.cancelCurrentAgent()
         await db.revoke(token); context.invalidate(false); contexts.delete(token)
         send(response, 200, { result: null }); return
       }

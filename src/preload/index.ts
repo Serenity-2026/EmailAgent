@@ -38,7 +38,8 @@ const api: DesktopApi = {
     return () => ipcRenderer.removeListener('ai:digest:ready', handler)
   },
   listAgentConversations: () => invoke('agent:history'),
-  runAgent: (prompt, conversationId) => invoke('agent:run', prompt, conversationId),
+  runAgent: (prompt, conversationId, jobId) => invoke('agent:run', prompt, conversationId || '', jobId),
+  cancelAgentJob: (jobId) => invoke('agent:cancel', jobId),
   confirmAgentProposal: (proposalId) => invoke('agent:confirm', proposalId),
   clearAgentHistory: () => invoke('agent:clear'),
   onAgentProgress: (listener) => {

@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -222,7 +222,7 @@ describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integr
       ensureActive!()
       return { answer: '回答', sources: [], actions: [], warnings: [], truncated: false, scope: '近期' }
     })
-    const task = rpc('agent:run', ['总结邮件'], token)
+    const task = rpc('agent:run', ['总结邮件', '', randomUUID()], token)
     await waiting
     expect((await rpc('auth:logout', [], token)).status).toBe(200)
     release()

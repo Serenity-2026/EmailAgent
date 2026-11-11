@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { listAiModels, parseGeneratedDraft, resolveAiKey, validateAiSettings } from './ai'
+import { complete, listAiModels, parseGeneratedDraft, resolveAiKey, validateAiSettings } from './ai'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -48,5 +48,16 @@ describe('AI input and output boundaries', () => {
     const saved = { baseUrl: 'https://first.example/v1', model: 'a', apiKey: 'saved-key', dailyTime: '09:00', autoDaily: false }
     expect(resolveAiKey('https://first.example/v1/', '', saved)).toBe('saved-key')
     expect(resolveAiKey('https://second.example/v1', '', saved)).toBe('')
+  })
+
+  it('aborts an in-flight model request with the Agent job signal', async () => {
+    const controller = new AbortController()
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, options: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => options.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true }))))
+    const running = complete({
+      baseUrl: 'https://example.com/v1', model: 'test', apiKey: 'key', dailyTime: '09:00', autoDaily: false
+    }, 'system', 'user', controller.signal)
+    controller.abort()
+    await expect(running).rejects.toThrow('aborted')
   })
 })

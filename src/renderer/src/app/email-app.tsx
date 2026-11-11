@@ -40,7 +40,8 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     composePreview, setComposePreview, composeBusy, setComposeBusy, draft, setDraft, pendingSource } = useMailState()
   const { digest, setDigest, digestLoading, setDigestLoading } = useDigestState()
   const { agentConversations, setAgentConversations, agentConversationId, setAgentConversationId,
-    agentPrompt, setAgentPrompt, agentBusy, setAgentBusy, agentStatus, setAgentStatus,
+    agentPrompt, setAgentPrompt, agentBusy, setAgentBusy, agentJobId, setAgentJobId, agentJobIdRef,
+    agentStatus, setAgentStatus,
     agentProposal, setAgentProposal, overview, setOverview, overviewLoading, setOverviewLoading,
     overviewError, setOverviewError, agentMessagesRef, agentScrollState, overviewShown } = useAgentState()
 
@@ -53,7 +54,9 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       setDigest(result)
       setView('digest')
     })
-    const unsubscribeAgent = api.onAgentProgress((progress) => setAgentStatus(progress.detail))
+    const unsubscribeAgent = api.onAgentProgress((progress) => {
+      if (!agentJobIdRef.current || progress.jobId === agentJobIdRef.current) setAgentStatus(progress.detail)
+    })
     const unsubscribeError = api.onAppError((message) => setError(message))
     return () => { unsubscribe(); unsubscribeAgent(); unsubscribeError() }
   }, [api])
@@ -170,6 +173,8 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     setAgentConversationId('')
     setAgentPrompt('')
     setAgentBusy(false)
+    setAgentJobId('')
+    agentJobIdRef.current = ''
     setAgentStatus('')
     setAgentProposal(null)
     setOverview(null)
@@ -469,25 +474,40 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
   async function runAgent(): Promise<void> {
     if (!agentPrompt.trim() || !await ensureAiConfigured()) return
     const epoch = sessionEpoch.current
+    const jobId = crypto.randomUUID()
     setAgentBusy(true)
+    setAgentJobId(jobId)
+    agentJobIdRef.current = jobId
     setAgentStatus('正在理解任务')
     setAgentProposal(null)
     setError('')
     try {
-      const result = await api.runAgent(agentPrompt, agentConversationId || undefined)
+      const result = await api.runAgent(agentPrompt, agentConversationId || undefined, jobId)
       if (epoch !== sessionEpoch.current) return
       setAgentConversations((current) => [result.conversation, ...current.filter((item) => item.id !== result.conversation.id)])
       setAgentConversationId(result.conversation.id)
       setAgentProposal(result.proposal || null)
       setAgentPrompt('')
+      setAgentStatus('任务已完成')
     } catch (err) {
-      if (epoch === sessionEpoch.current) setError(errorText(err))
+      if (epoch === sessionEpoch.current) {
+        const message = errorText(err)
+        if (message.includes('Agent 任务已取消')) setAgentStatus('任务已取消')
+        else { setAgentStatus('任务执行失败'); setError(message) }
+      }
     } finally {
       if (epoch === sessionEpoch.current) {
         setAgentBusy(false)
-        setAgentStatus('')
+        setAgentJobId('')
+        if (agentJobIdRef.current === jobId) agentJobIdRef.current = ''
       }
     }
+  }
+
+  async function cancelAgent(): Promise<void> {
+    if (!agentJobId) return
+    const result = await api.cancelAgentJob(agentJobId)
+    if (result.status === 'cancelling') setAgentStatus('正在取消任务…')
   }
 
   async function loadOverview(): Promise<void> {
@@ -659,7 +679,8 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
         onClear={clearAgentHistory} onSelectConversation={(id) => { setAgentConversationId(id); setAgentProposal(null) }}
         onLoadOverview={() => void loadOverview()} onOpenSource={openAgentSource}
         onOpenDraft={(nextDraft) => { setDraft(nextDraft); setComposePreview(false); setComposeOpen(true) }}
-        onConfirm={confirmAgentActions} onPrompt={setAgentPrompt} onRun={() => void runAgent()} /> : view === 'digest' ?
+        onConfirm={confirmAgentActions} onPrompt={setAgentPrompt} onRun={() => void runAgent()}
+        onCancel={() => void cancelAgent()} /> : view === 'digest' ?
         <DigestView digest={digest} loading={digestLoading} onOpenSource={openDigestSource} /> :
         <MailView accountId={accountId} mails={mails} selected={selected} detail={detail}
           mailLoading={mailLoading} detailLoading={detailLoading}

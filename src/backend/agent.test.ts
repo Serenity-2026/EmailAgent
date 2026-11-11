@@ -115,4 +115,16 @@ describe('Agent boundaries', () => {
       () => { throw new Error('登录状态已变化') })).rejects.toThrow('登录状态已变化')
     expect(searchAgentMail).not.toHaveBeenCalled()
   })
+
+  it('passes cancellation through the planning model request', async () => {
+    const controller = new AbortController()
+    vi.mocked(complete).mockImplementationOnce(async (_settings, _system, _user, signal) =>
+      new Promise<string>((_resolve, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })))
+    const running = runAgentTask(settings, '查邮件', [account], undefined, () => undefined,
+      () => { if (controller.signal.aborted) throw new Error('Agent 任务已取消') }, controller.signal)
+    expect(vi.mocked(complete).mock.calls[0][3]).toBe(controller.signal)
+    controller.abort()
+    await expect(running).rejects.toThrow('aborted')
+    expect(searchAgentMail).not.toHaveBeenCalled()
+  })
 })
