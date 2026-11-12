@@ -314,7 +314,7 @@
 - [x] 已完成 `feature/multiple-recipients`：草稿使用数组型 `to/cc/bcc`，逐地址校验并限制总数；旧本地草稿和 Agent 历史中的字符串收件人会安全迁移。
 - [x] 已完成 `feature/safe-attachment-download`：附件按需经系统对话框保存，限制单件 10 MB/邮件合计 20 MB，净化文件名并复核 UIDVALIDITY；附件不进入 AI 输入。
 - [x] 已完成 `feature/redacted-diagnostics`：主进程保存 3 代有界本地诊断日志，设置页可一键导出；敏感键、令牌模式和邮件内容在记录与导出两层脱敏。
-- [ ] `chore/platform-packaging`：在 macOS 流程稳定后增加 Windows 打包与启动验证；不同平台分别记录 Docker 和安全存储前置条件。
+- [x] 已完成 `chore/platform-packaging`：新增 Windows x64 目录包及 macOS/Windows 打包后真实启动验证；本地服务可发现并启动 Windows Docker Desktop，文档分别记录 Docker、Compose 与系统安全存储前置条件。
 
 每个子模块都必须独立建分支、独立验收；不要用一个“大而全”的邮件增强 PR 合并。
 

@@ -15,6 +15,8 @@ let diagnostics: DiagnosticsLogger | undefined
 let composeDirty = false
 let closePromptOpen = false
 let forceWindowClose = false
+const startupSmoke = app.isPackaged && process.env.EMAILAGENT_STARTUP_SMOKE === '1'
+const startupSmokeResult = process.env.EMAILAGENT_STARTUP_SMOKE_RESULT
 const ownsInstance = app.requestSingleInstanceLock()
 if (!ownsInstance) app.quit()
 
@@ -28,6 +30,7 @@ function emit(channel: string, payload: unknown): void {
 function createWindow(): void {
   window = new BrowserWindow({
     width: 1240, height: 800, minWidth: 900, minHeight: 600, title: 'EmailAgent',
+    show: !startupSmoke,
     webPreferences: { preload: join(__dirname, '../preload/index.js'), nodeIntegration: false, contextIsolation: true, sandbox: true }
   })
   window.webContents.on('will-navigate', (event) => event.preventDefault())
@@ -52,8 +55,23 @@ function createWindow(): void {
   window.on('closed', () => {
     client.stopEvents(); window = null; composeDirty = false; closePromptOpen = false; forceWindowClose = false
   })
+  let smokeTimer: ReturnType<typeof setTimeout> | undefined
+  if (startupSmoke) {
+    smokeTimer = setTimeout(() => app.exit(1), 25_000)
+    window.webContents.once('did-finish-load', () => {
+      if (smokeTimer) clearTimeout(smokeTimer)
+      if (!startupSmokeResult) { app.exit(1); return }
+      void writeFile(startupSmokeResult, JSON.stringify({
+        status: 'ready', packaged: app.isPackaged, platform: process.platform, arch: process.arch
+      }), { flag: 'wx' }).then(() => app.exit(0), () => app.exit(1))
+    })
+  }
   const load = process.env.ELECTRON_RENDERER_URL ? window.loadURL(process.env.ELECTRON_RENDERER_URL) : window.loadFile(join(__dirname, '../renderer/index.html'))
-  void load.catch(() => { void diagnostics?.record('error', 'window.load-failed'); emit('app:error', '界面加载失败，请重新启动应用') })
+  void load.catch(() => {
+    if (smokeTimer) clearTimeout(smokeTimer)
+    void diagnostics?.record('error', 'window.load-failed'); emit('app:error', '界面加载失败，请重新启动应用')
+    if (startupSmoke) app.exit(1)
+  })
   client.startEvents()
 }
 

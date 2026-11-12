@@ -16,7 +16,10 @@
     "services:up": "docker compose up -d --build --wait",
     "services:down": "docker compose down",
     "test:backend": "node scripts/run-backend-tests.mjs",
-    "package:mac": "npm run backend:build && npm run build && node scripts/prepare-runtime.mjs && electron-builder --mac dir --publish never --config.electronDist=node_modules/electron/dist"
+    "package:mac": "npm run backend:build && npm run build && node scripts/prepare-runtime.mjs && electron-builder --mac dir --publish never --config.electronDist=node_modules/electron/dist",
+    "package:win": "npm run backend:build && npm run build && node scripts/prepare-runtime.mjs && electron-builder --win dir --x64 --publish never --config.electronDist=node_modules/electron/dist",
+    "verify:package:mac": "node scripts/verify-packaged-startup.mjs mac",
+    "verify:package:win": "node scripts/verify-packaged-startup.mjs win"
   },
   "dependencies": {
     "@ant-design/plots": "2.6.8",

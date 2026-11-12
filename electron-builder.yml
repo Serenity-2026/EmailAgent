@@ -12,3 +12,5 @@ extraResources:
     to: service
 mac:
   target: dir
+win:
+  target: dir

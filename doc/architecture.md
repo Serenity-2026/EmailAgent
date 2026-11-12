@@ -1,7 +1,7 @@
 # EmailAgent 业务与代码架构
 
 更新时间：2026-11-12
-更新内容：主进程使用有界轮转诊断日志记录安全元数据，支持系统对话框导出并执行双层脱敏。
+更新内容：桌面打包与本地服务启动覆盖 macOS 和 Windows，并以隔离用户目录验证打包后主进程、preload 与 Renderer 启动链路。
 
 ## 应用边界
 
@@ -10,6 +10,10 @@ Electron 渲染进程只负责中文界面，通过 preload 的固定 IPC 方法
 后端和 MySQL 通过 `compose.yml` 独立部署；宿主机只在回环地址发布 API 3210 和 MySQL 3306。MySQL 使用命名卷保存数据，重启容器或 `docker compose down` 不删除数据。root 初始密码由 `.env` 的 `MYSQL_ROOT_PASSWORD` 提供，后端使用单独的 `emailagent` 数据库账号。初始化变量仅在空数据卷首次启动时生效，口径见 [MySQL 官方容器入口](https://github.com/docker-library/mysql/blob/master/8.4/docker-entrypoint.sh)。
 
 打包时将已编译的后端、生产依赖清单、`Dockerfile.runtime` 与 Compose 文件放入应用资源目录。桌面启动或发送请求时先检查本机 API 健康状态；服务未就绪时自动启动现有 Docker 引擎（Colima 或 Docker Desktop），并通过打包的 Compose 文件构建、启动 MySQL 和后端，等待健康检查通过后继续请求。同一时间只执行一次启动任务。首次启动从现有 EmailAgent 容器恢复数据库账号密钥和会话密钥；新环境生成独立应用账号密码和会话密钥。配置仅写入当前用户应用数据目录的 `service.env`，权限为 `0600`，不放进安装包。已有数据库卷但缺少连接配置时停止启动并保留数据。自定义后端地址时跳过本机服务管理。
+
+本地服务启动器按平台构造 Docker CLI 搜索路径：macOS 支持 Homebrew、Docker Desktop 与 Colima，Windows 支持 PATH、标准 `Program Files` 和当前用户 Docker 目录；Windows 引擎未运行时从标准位置隐藏启动 Docker Desktop。目标平台必须提供 Docker Compose v2 与 Linux 容器。会话安全存储在 macOS 使用当前用户钥匙串，在 Windows 使用当前用户 DPAPI；Linux 需要 Secret Service，检测到 `basic_text` 时不保存令牌。详细前置条件与故障边界见[平台打包文档](platform-packaging.md)。
+
+`verify:package:mac` 与 `verify:package:win` 在对应操作系统使用临时用户目录和不可达的回环 API 启动目录包。验证窗口保持隐藏；只有打包主进程成功创建窗口且 preload 与 Renderer 完成加载后才写入临时就绪标记并以成功状态退出。验证不启动 Docker、不读取真实用户会话，结束后删除临时目录。CI 在 macOS 与 Windows runner 分别执行打包和此启动检查。
 
 定时摘要的会话检查遇到短暂数据库故障时等待下一次检查，不将其误报为摘要生成失败。
 

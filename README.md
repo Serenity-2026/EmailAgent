@@ -194,3 +194,11 @@ npm run backend:start
 - 文本层额外遮盖 Bearer 值、`sk-` 风格密钥和 64 位十六进制会话令牌；导出文件生成前再次执行全文脱敏。
 - 设置页新增“导出诊断信息”，由系统对话框选择位置；导出只附带应用版本、平台、架构和运行时版本等非用户数据。
 - 新增嵌套敏感值、令牌模式、轮转上限、导出二次脱敏和设置页入口回归测试。
+
+### 0.1.13 - 跨平台打包与启动验证（2026-11-12）
+
+- 新增 Windows x64 目录包命令 `npm run package:win`，输出到 `release/win-unpacked`；保留独立的 macOS 目录包流程。
+- 新增 `verify:package:mac` 与 `verify:package:win`，使用临时用户目录隐藏启动打包程序，并在主进程、preload 与 Renderer 真正加载完成后才判定成功。
+- 本地服务启动器按平台构造命令搜索路径；Windows 可从标准位置发现 Docker CLI，并在引擎未运行时隐藏启动 Docker Desktop。
+- GitHub Actions 分别在 macOS 与 Windows runner 执行目录打包和启动冒烟验证，阻止缺文件或启动即崩溃的交付物进入主分支。
+- 新增[平台打包与运行前置条件](doc/platform-packaging.md)，分别记录 macOS 钥匙串、Windows DPAPI、Linux Secret Service，以及各平台 Docker/Compose 要求和验收边界。
