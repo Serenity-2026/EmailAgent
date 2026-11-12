@@ -15,6 +15,7 @@ import { LoginAttemptLimiter } from './login-limiter'
 const encryption = vi.hoisted(() => ({ fail: false }))
 vi.mock('electron', () => ({ safeStorage: {
   isEncryptionAvailable: () => true,
+  getSelectedStorageBackend: () => 'secret-service',
   encryptString: (value: string) => Buffer.from(value),
   decryptString: (value: Buffer) => { if (encryption.fail) throw new Error('BAD_DECRYPT'); return value.toString() }
 } }))
@@ -286,7 +287,7 @@ describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integr
     await waiting
     expect((await rpc('auth:logout', [], token)).status).toBe(200)
     release()
-    expect((await task).error).toContain('登录状态已变化')
+    expect((await task).error).toContain('Agent 任务已取消')
     const restored = await MysqlStore.login(db, 'dmc', '123456')
     expect(restored.agentConversations).toEqual([])
     restored.logout()

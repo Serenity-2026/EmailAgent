@@ -210,3 +210,10 @@ npm run backend:start
 - 最终回归通过 TypeScript 类型检查、98 项普通自动化测试和生产构建；Windows x64 目录包已实际生成，并通过打包后主进程、preload 与 Renderer 启动验证。
 - MySQL 8.4 隔离集成测试由 CI 的独立质量任务执行；真实 QQ/163 邮箱与个人授权码仍只允许在用户本机验收，不写入仓库或自动化日志。
 - 已清理所有合并到本地 `main` 的本轮本地主题分支；未执行远端推送或删除，避免在没有明确发布授权时改变远端主分支和未合并引用。
+
+### 0.1.15 - 跨平台 CI 回归修复（2026-11-12）
+
+- Linux MySQL 集成测试的 Electron 安全存储 mock 现在完整模拟 Secret Service，令牌恢复测试不再因缺少 Linux 专属方法而被误判为损坏令牌。
+- 登出中止运行中 Agent 的集成断言与现有产品语义统一为“Agent 任务已取消”，同时继续验证不写入半成品历史。
+- 桌面打包只在本地 Electron 运行时确实存在时复用 `electronDist`；缺失时由 electron-builder 下载锁定版本，避免 Windows CI 在目录检查阶段失败。
+- GitHub Actions 更新到 Node 24 运行时的 checkout/setup-node action，并使用 `macos-latest` 获取当前可用的 macOS runner。

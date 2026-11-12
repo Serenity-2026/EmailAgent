@@ -46,6 +46,6 @@ Linux 当前只支持源码开发和后端部署，不在本轮桌面交付矩�
 
 ## 启动验证口径
 
-`verify:package:mac` 与 `verify:package:win` 使用隔离的临时用户目录和不可达的本机测试 API 地址启动打包程序。主进程创建隐藏窗口，只有主页面与 preload 成功加载后才原子写入就绪标记并以状态码 0 退出；超时、进程异常、非打包运行、页面加载失败或标记不一致都会使命令失败。验证结束会移除临时用户目录，不读取或修改真实用户会话。
+打包脚本优先复用 `npm ci` 已安装的 Electron 运行时；如果安装环境显式跳过了 Electron 二进制下载，则由 electron-builder 获取锁定版本，不会把不存在的 `electronDist` 目录传给打包器。`verify:package:mac` 与 `verify:package:win` 使用隔离的临时用户目录和不可达的本机测试 API 地址启动打包程序。主进程创建隐藏窗口，只有主页面与 preload 成功加载后才原子写入就绪标记并以状态码 0 退出；超时、进程异常、非打包运行、页面加载失败或标记不一致都会使命令失败。验证结束会移除临时用户目录，不读取或修改真实用户会话。
 
 GitHub Actions 在 macOS 与 Windows runner 上分别执行对应的目录打包和启动验证。实际 Docker 主链路仍需在目标平台确认 `docker info`、`docker compose version`，再启动应用完成首次管理员创建和重新连接检查。
