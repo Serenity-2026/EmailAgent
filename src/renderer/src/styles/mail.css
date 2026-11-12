@@ -2,6 +2,11 @@
 .mail-list, .reader { min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .mail-list { background: #fff; border-right: 1px solid #eaedf3; }
 .mail-list-head { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; align-items: center; padding: 19px 22px 14px; background: #fff; color: #8b96aa; font-size: 12px; font-weight: 650; border-bottom: 1px solid #f0f2f6; }
+.mail-search { display: grid; gap: 7px; padding: 12px 14px; border-bottom: 1px solid #f0f2f6; background: #fafbfe; }
+.mail-search-row { display: flex; gap: 7px; }
+.mail-search-row > * { min-width: 0; flex: 1; }
+.mail-list > .ant-alert { margin: 8px 12px; padding: 7px 10px; font-size: 12px; }
+.mail-load-more { display: flex; justify-content: center; padding: 18px; }
 .mail-row { width: 100%; padding: 19px 22px; border: 0; border-bottom: 1px solid #f0f2f6; background: #fff; color: #28334e; text-align: left; cursor: pointer; transition: background .15s ease; }
 .mail-row:hover { background: #f7f9fe; }
 .mail-row.selected { background: #eef3ff; box-shadow: inset 3px 0 #5e80df; }

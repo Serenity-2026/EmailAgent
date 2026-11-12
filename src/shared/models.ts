@@ -22,6 +22,36 @@ export interface MailSummary {
   unread: boolean
 }
 
+export interface MailFolder {
+  id: string
+  path: string
+  name: string
+  specialUse?: string
+  selectable: boolean
+  readOnly: boolean
+}
+
+export interface MailSearchQuery {
+  subject?: string
+  from?: string
+  since?: string
+  before?: string
+  unread?: boolean
+}
+
+export interface MailListOptions {
+  cursor?: string
+  limit?: number
+  query?: MailSearchQuery
+}
+
+export interface MailPage {
+  messages: MailSummary[]
+  nextCursor?: string
+  truncated: boolean
+  warnings: string[]
+}
+
 export interface MailDetail extends MailSummary {
   uidValidity: string
   to: string
@@ -169,7 +199,8 @@ export interface DesktopApi {
   listAccounts(): Promise<Account[]>
   addAccount(input: AccountInput): Promise<Account>
   removeAccount(id: string): Promise<void>
-  listMail(accountId: string, folder: string): Promise<MailSummary[]>
+  listMailFolders(accountId: string): Promise<MailFolder[]>
+  listMail(accountId: string, folder: string, options?: MailListOptions): Promise<MailPage>
   getMail(accountId: string, folder: string, uid: number, markRead?: boolean): Promise<MailDetail>
   openExternalLink(url: string): Promise<void>
   getSentFolder(accountId: string): Promise<string | null>

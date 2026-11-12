@@ -13,6 +13,7 @@
 :root[data-theme='dark'] .mail-list-head, :root[data-theme='dark'] .mail-row,
 :root[data-theme='dark'] .agent-layout, :root[data-theme='dark'] .agent-compose { background: #182236; border-color: #2b3850; }
 :root[data-theme='dark'] .mail-row { color: #e1e8f5; }
+:root[data-theme='dark'] .mail-search { background: #141e31; border-color: #2b3850; }
 :root[data-theme='dark'] .mail-row:hover, :root[data-theme='dark'] .mail-row.selected { background: #253753; }
 :root[data-theme='dark'] .mail-row-subject, :root[data-theme='dark'] .reader-meta,
 :root[data-theme='dark'] .agent-history-item { color: #acbad0; }

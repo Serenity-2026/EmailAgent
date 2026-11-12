@@ -14,6 +14,7 @@ button, input, textarea { font: inherit; }
 .brand { flex: none; padding: 0 12px 34px; color: #1c2742; font-size: 22px; font-weight: 760; letter-spacing: -.9px; }
 .brand span { color: #5178db; }
 .sidebar-label { margin: 30px 12px 12px; color: #929cb0; font-size: 11px; font-weight: 700; letter-spacing: 1.1px; }
+.sidebar-note { padding: 8px 14px; color: #7d899f; font-size: 12px; }
 .nav-item, .account-item { display: flex; flex: none; width: 100%; align-items: center; min-height: 40px; margin-bottom: 3px; padding: 9px 12px; border: 0; border-radius: 11px; background: transparent; color: #5b6680; text-align: left; font-size: 13px; font-weight: 550; cursor: pointer; }
 .nav-item:hover, .account-item:hover { background: #e8ecf7; color: #24365c; }
 .nav-item.active, .account-item.active { background: #e0e9ff; color: #315dbb; font-weight: 700; }

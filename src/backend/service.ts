@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import type {
   AccountInput, AgentCancelResult, AgentConfirmResult, AgentConversation, AgentMessage, AgentProgress,
-  AiSettingsInput, DigestHistoryItem, MailDraft, ThemeMode
+  AiSettingsInput, DigestHistoryItem, MailDraft, MailListOptions, ThemeMode
 } from '../shared/models'
 import type { StoredAccount } from '../shared/vault'
 import { generateDigest as summarize, generateDraft, listAiModels, resolveAiKey, testAiConnection, validateAiSettings } from './ai'
 import { runAgentTask } from './agent'
 import { AgentProposalRegistry, executeConfirmedActions } from './agent-proposals'
 import { getMailOverview } from './mail-overview'
-import { executeAgentAction, getMail, getSentFolder, listMail, sendMail, testAccount, todayMail } from './mail'
+import { executeAgentAction, getMail, getSentFolder, listMail, listMailFolders, sendMail, testAccount, todayMail } from './mail'
 import { validateAccount } from './providers'
 import { MysqlStore } from './store'
 import { DailyDigestCoordinator } from './digest-scheduler'
@@ -174,9 +174,15 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
     accountById(id)
     await store.setAccounts(store.accounts.filter((account) => account.id !== id))
   })
-  handlers.set('mail:list', async (accountId: string, folder: string) => {
+  handlers.set('mail:folders', async (accountId: string) => {
     const version = store.sessionVersion
-    const result = await listMail(accountById(accountId), folder)
+    const result = await listMailFolders(accountById(accountId))
+    requireSession(version)
+    return result
+  })
+  handlers.set('mail:list', async (accountId: string, folder: string, options?: MailListOptions) => {
+    const version = store.sessionVersion
+    const result = await listMail(accountById(accountId), folder, options)
     requireSession(version)
     return result
   })

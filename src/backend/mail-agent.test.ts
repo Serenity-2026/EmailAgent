@@ -4,7 +4,9 @@ import type { StoredAccount } from '../shared/vault'
 
 const state = vi.hoisted(() => ({
   uidValidity: 55n, archive: false, exists: true, calls: [] as string[], searchCount: 0, connectionError: false,
-  sourceSize: 100, missingSourceUids: new Set<number>()
+  sourceSize: 100, missingSourceUids: new Set<number>(), missingMetadataUids: new Set<number>(),
+  searchQueries: [] as Array<Record<string, unknown>>,
+  folders: [] as Array<{ path: string; name: string; specialUse?: string; flags?: Set<string> }>
 }))
 
 vi.mock('imapflow', () => ({
@@ -25,8 +27,8 @@ vi.mock('imapflow', () => ({
       }
     }
     async logout(): Promise<void> { state.calls.push('logout') }
-    async list(): Promise<Array<{ path: string; name: string; specialUse: string }>> {
-      return [
+    async list(): Promise<Array<{ path: string; name: string; specialUse?: string; flags?: Set<string> }>> {
+      return state.folders.length ? state.folders : [
         { path: 'INBOX', name: 'INBOX', specialUse: '\\Inbox' },
         { path: 'Sent', name: 'Sent', specialUse: '\\Sent' },
         ...(state.archive ? [{ path: 'Archive', name: 'Archive', specialUse: '\\Archive' }] : [])
@@ -49,18 +51,24 @@ vi.mock('imapflow', () => ({
     async messageFlagsAdd(): Promise<boolean> { state.calls.push('markRead'); return true }
     async messageFlagsRemove(): Promise<boolean> { state.calls.push('markUnread'); return true }
     async messageMove(): Promise<boolean> { state.calls.push('archive'); return true }
-    async search(): Promise<number[]> { return Array.from({ length: state.searchCount }, (_, index) => index + 1) }
+    async search(query: Record<string, unknown>): Promise<number[]> {
+      state.searchQueries.push(query)
+      return Array.from({ length: state.searchCount }, (_, index) => index + 1)
+    }
     async fetchAll(input: number[] | string): Promise<Array<Record<string, unknown>>> {
       const uids = typeof input === 'string' ? input.split(',').map(Number) : input
       state.calls.push(`fetchAll:${uids.length}`)
-      return uids.map((uid) => ({ uid, size: state.sourceSize,
+      return uids.filter((uid) => !state.missingMetadataUids.has(uid)).map((uid) => ({ uid, size: state.sourceSize,
         envelope: { subject: `Mail ${uid}`, from: [{ address: 'teacher@example.com' }] },
         flags: new Set(), internalDate: new Date('2026-09-25T00:00:00.000Z') }))
     }
   }
 }))
 
-import { executeAgentAction, getMail, MAX_INTERACTIVE_MAIL_BYTES, readAgentMailBatch, searchAgentMail, todayMail } from './mail'
+import {
+  executeAgentAction, getMail, listMail, listMailFolders, MAX_INTERACTIVE_MAIL_BYTES,
+  readAgentMailBatch, searchAgentMail, todayMail
+} from './mail'
 
 const account: StoredAccount = { id: 'one', provider: 'qq', address: 'student@qq.com', authorizationCode: 'example' }
 const mail: AgentMailRef = {
@@ -76,7 +84,92 @@ beforeEach(() => {
   state.connectionError = false
   state.sourceSize = 100
   state.missingSourceUids = new Set()
+  state.missingMetadataUids = new Set()
+  state.searchQueries = []
+  state.folders = []
   state.calls = []
+})
+
+describe('mailbox navigation', () => {
+  it('exposes provider folder roles and conservative capabilities with stable ids', async () => {
+    state.folders = [
+      { path: 'INBOX', name: '收件箱', specialUse: '\\Inbox' },
+      { path: '其他文件夹/已发送', name: '已发送', specialUse: '\\Sent' },
+      { path: '草稿', name: '草稿箱', specialUse: '\\Drafts' },
+      { path: '垃圾邮件', name: '垃圾邮件', specialUse: '\\Junk' },
+      { path: '归档', name: '归档', specialUse: '\\Archive', flags: new Set(['\\ReadOnly']) },
+      { path: '容器', name: '容器', flags: new Set(['\\Noselect']) }
+    ]
+    const folders = await listMailFolders(account)
+    expect(folders.map((item) => item.specialUse)).toEqual(['\\Inbox', '\\Sent', '\\Drafts', '\\Archive', '\\Junk', undefined])
+    expect(folders.find((item) => item.path === '归档')).toMatchObject({ selectable: true, readOnly: true })
+    expect(folders.find((item) => item.path === '容器')?.selectable).toBe(false)
+    expect(new Set(folders.map((item) => item.id)).size).toBe(folders.length)
+    state.folders = [
+      { path: 'INBOX', name: 'INBOX', specialUse: '\\Inbox' },
+      { path: 'Sent Messages', name: '已发送邮件', specialUse: '\\Sent' },
+      { path: 'Drafts', name: '草稿', specialUse: '\\Drafts' },
+      { path: 'Junk', name: '垃圾邮件', specialUse: '\\Junk' },
+      { path: 'Deleted Messages', name: '已删除', specialUse: '\\Trash' }
+    ]
+    const account163: StoredAccount = { ...account, provider: '163', address: 'student@163.com' }
+    expect((await listMailFolders(account163)).map((item) => item.specialUse))
+      .toEqual(['\\Inbox', '\\Sent', '\\Drafts', '\\Junk', '\\Trash'])
+  })
+
+  it('paginates by UID without duplicates when newer mail arrives', async () => {
+    state.searchCount = 120
+    const first = await listMail(account, 'INBOX')
+    expect(first.messages).toHaveLength(50)
+    expect(first.messages[0].uid).toBe(120)
+    expect(first.messages.at(-1)?.uid).toBe(71)
+    expect(first.nextCursor).toBeTruthy()
+    state.searchCount = 121
+    const second = await listMail(account, 'INBOX', { cursor: first.nextCursor })
+    expect(second.messages[0].uid).toBe(70)
+    expect(second.messages.at(-1)?.uid).toBe(21)
+    expect(new Set([...first.messages, ...second.messages].map((item) => item.uid)).size).toBe(100)
+    const third = await listMail(account, 'INBOX', { cursor: second.nextCursor })
+    expect(third.messages.map((item) => item.uid)).toEqual(Array.from({ length: 20 }, (_, index) => 20 - index))
+    expect(third.nextCursor).toBeUndefined()
+  })
+
+  it('executes bounded search on the IMAP server and reports truncation', async () => {
+    state.searchCount = 250
+    const page = await listMail(account, 'INBOX', { query: {
+      subject: '课程', from: 'teacher@example.com', since: '2026-09-01', before: '2026-10-01', unread: true
+    } })
+    expect(page.messages).toHaveLength(50)
+    expect(page.truncated).toBe(true)
+    expect(page.nextCursor).toBeTruthy()
+    expect(state.searchQueries[0]).toMatchObject({ subject: '课程', from: 'teacher@example.com', seen: false })
+    expect(state.searchQueries[0].since).toBeInstanceOf(Date)
+    let cursor = page.nextCursor
+    let total = page.messages.length
+    while (cursor) {
+      const next = await listMail(account, 'INBOX', { cursor, query: {
+        subject: '课程', from: 'teacher@example.com', since: '2026-09-01', before: '2026-10-01', unread: true
+      } })
+      total += next.messages.length
+      cursor = next.nextCursor
+    }
+    expect(total).toBe(200)
+  })
+
+  it('warns instead of silently skipping mail moved during a page fetch', async () => {
+    state.searchCount = 60
+    state.missingMetadataUids.add(58)
+    const page = await listMail(account, 'INBOX')
+    expect(page.messages.some((item) => item.uid === 58)).toBe(false)
+    expect(page.warnings[0]).toContain('移动或删除')
+  })
+
+  it('rejects a cursor after UIDVALIDITY changes', async () => {
+    state.searchCount = 60
+    const first = await listMail(account, 'INBOX')
+    state.uidValidity = 56n
+    await expect(listMail(account, 'INBOX', { cursor: first.nextCursor })).rejects.toThrow('游标已失效')
+  })
 })
 
 describe('Agent IMAP access', () => {
@@ -137,6 +230,15 @@ describe('Agent IMAP access', () => {
   it('does not archive when the provider has no archive folder', async () => {
     const action: AgentAction = { kind: 'archive', mail }
     await expect(executeAgentAction(account, action)).rejects.toThrow('没有可用的归档文件夹')
+    expect(state.calls).not.toContain('archive')
+  })
+
+  it('does not treat an Archive-like name as permission for a destructive move', async () => {
+    state.folders = [
+      { path: 'INBOX', name: 'INBOX', specialUse: '\\Inbox' },
+      { path: 'Archive', name: '归档' }
+    ]
+    await expect(executeAgentAction(account, { kind: 'archive', mail })).rejects.toThrow('没有可用的归档文件夹')
     expect(state.calls).not.toContain('archive')
   })
 

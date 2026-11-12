@@ -11,7 +11,7 @@ vi.mock('./ai', () => ({
 vi.mock('./mail-overview', () => ({ getMailOverview: vi.fn() }))
 vi.mock('./mail', () => ({
   executeAgentAction: vi.fn(), getMail: vi.fn(), getSentFolder: vi.fn(), listMail: vi.fn(),
-  sendMail: vi.fn(), testAccount: vi.fn(), todayMail: vi.fn()
+  listMailFolders: vi.fn(), sendMail: vi.fn(), testAccount: vi.fn(), todayMail: vi.fn()
 }))
 
 import { runAgentTask } from './agent'
@@ -73,7 +73,7 @@ describe('BackendContext Agent concurrency', () => {
   it('keeps mail list and detail reads responsive while an Agent job is running', async () => {
     const { context } = contextWithHistory()
     const ready = blockedAgent('planning')
-    vi.mocked(listMail).mockResolvedValue([])
+    vi.mocked(listMail).mockResolvedValue({ messages: [], truncated: false, warnings: [] })
     vi.mocked(getMail).mockResolvedValue({
       uid: 7, accountId: account.id, folder: 'INBOX', uidValidity: '1', from: 'teacher@example.com',
       subject: '课程', date: new Date().toISOString(), unread: false, to: '', text: '正文', html: '',
@@ -81,7 +81,7 @@ describe('BackendContext Agent concurrency', () => {
     })
     const running = context.invoke('agent:run', ['总结邮件', '', jobIds[0]])
     await ready
-    await expect(context.invoke('mail:list', [account.id, 'INBOX'])).resolves.toEqual([])
+    await expect(context.invoke('mail:list', [account.id, 'INBOX'])).resolves.toEqual({ messages: [], truncated: false, warnings: [] })
     await expect(context.invoke('mail:get', [account.id, 'INBOX', 7, false])).resolves.toMatchObject({ uid: 7 })
     await context.invoke('agent:cancel', [jobIds[0]])
     await expect(running).rejects.toThrow('Agent 任务已取消')

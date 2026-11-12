@@ -29,7 +29,9 @@ function apiFor(session: string | null, bootstrapRequired = false, demoMode = fa
     login: vi.fn(async () => { username = 'dmc'; return { username } }), logout: vi.fn(async () => undefined),
     createUser: vi.fn(async () => undefined), changePassword: vi.fn(async () => undefined),
     listAccounts: vi.fn(async () => [account]), addAccount: vi.fn(), removeAccount: vi.fn(async () => undefined),
-    listMail: vi.fn(async () => [mail]), getMail: vi.fn(), openExternalLink: vi.fn(async () => undefined),
+    listMailFolders: vi.fn(async () => [{ id: 'inbox', path: 'INBOX', name: 'INBOX', specialUse: '\\Inbox', selectable: true, readOnly: false }]),
+    listMail: vi.fn(async () => ({ messages: [mail], truncated: false, warnings: [] })),
+    getMail: vi.fn(), openExternalLink: vi.fn(async () => undefined),
     getSentFolder: vi.fn(async () => 'Sent'), sendMail: vi.fn(async () => undefined),
     getAiSettings: vi.fn(async () => ({ baseUrl: 'https://example.com/v1', model: 'model', dailyTime: '09:00', autoDaily: false, hasApiKey: true })),
     listAiModels: vi.fn(async () => ['model']), saveAiSettings: vi.fn(async () => undefined),
@@ -144,5 +146,55 @@ describe('renderer critical paths', () => {
     await act(async () => run?.click())
     await flush()
     expect(container.textContent).toContain('确认整理')
+  })
+
+  it('navigates real folders, loads older mail, remembers account search state and falls back safely', async () => {
+    const second: Account = { id: 'second', provider: '163', address: 'student@163.com' }
+    const api = apiFor('dmc')
+    let draftsAvailable = true
+    api.listAccounts = vi.fn(async () => [account, second])
+    api.listMailFolders = vi.fn(async (accountId) => [
+      { id: `${accountId}-inbox`, path: 'INBOX', name: 'INBOX', specialUse: '\\Inbox', selectable: true, readOnly: false },
+      ...(accountId === account.id && draftsAvailable
+        ? [{ id: 'drafts', path: 'Drafts', name: 'Drafts', specialUse: '\\Drafts', selectable: true, readOnly: false }] : [])
+    ])
+    api.listMail = vi.fn(async (accountId, target, options) => ({
+      messages: [{ ...mail, accountId, folder: target }],
+      ...(options?.cursor ? {} : { nextCursor: 'next-page' }), truncated: false, warnings: []
+    }))
+    window.emailAgent = api
+    const { EmailApp } = await import('./app/email-app')
+    const appRoot = createRoot(container)
+    root = appRoot
+    await act(async () => appRoot.render(<EmailApp themeMode="system" setThemeMode={() => undefined} dark={false} />))
+    await flush(); await flush()
+
+    await act(async () => buttonNamed(container, '继续加载')?.click())
+    await flush()
+    expect(vi.mocked(api.listMail).mock.calls.some((call) => call[2]?.cursor === 'next-page')).toBe(true)
+
+    await act(async () => buttonNamed(container, '草稿箱')?.click())
+    await flush()
+    const subject = container.querySelector('.mail-search input[placeholder="主题"]') as HTMLInputElement
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(subject, '课程报告'); subject.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => buttonNamed(container, '搜索')?.click())
+    await flush()
+    expect(vi.mocked(api.listMail).mock.calls.some((call) => call[1] === 'Drafts' && call[2]?.query?.subject === '课程报告')).toBe(true)
+
+    await act(async () => buttonNamed(container, second.address)?.click())
+    await flush(); await flush()
+    await act(async () => buttonNamed(container, account.address)?.click())
+    await flush(); await flush()
+    expect(vi.mocked(api.listMail).mock.calls.at(-1)?.[1]).toBe('Drafts')
+    expect((container.querySelector('.mail-search input[placeholder="主题"]') as HTMLInputElement).value).toBe('课程报告')
+
+    await act(async () => buttonNamed(container, second.address)?.click())
+    await flush(); draftsAvailable = false
+    await act(async () => buttonNamed(container, account.address)?.click())
+    await flush(); await flush()
+    expect(vi.mocked(api.listMail).mock.calls.at(-1)?.[1]).toBe('INBOX')
   })
 })

@@ -2,7 +2,7 @@ import React, { useEffect } from 'react'
 import { Alert, Button, Modal } from 'antd'
 import 'antd/dist/reset.css'
 import type {
-  AgentMessage, AgentProposal, DesktopApi, MailSummary, ThemeMode
+  AgentMessage, AgentProposal, DesktopApi, MailFolder, MailSummary, ThemeMode
 } from '../../../shared/models'
 import { emptyDraft, useAccountSettingsState, useAgentState, useDigestState, useMailState, useSessionState } from './use-app-state'
 import { BootstrapView, ConnectionErrorView, LaunchView, LoginView } from '../features/auth/auth-views'
@@ -17,6 +17,16 @@ declare global {
 }
 
 const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error)
+const folderLabel = (folder: MailFolder): string => {
+  const role = folder.specialUse?.toLowerCase()
+  if (role === '\\inbox' || folder.path.toUpperCase() === 'INBOX') return '收件箱'
+  if (role === '\\sent') return '已发送'
+  if (role === '\\drafts') return '草稿箱'
+  if (role === '\\archive') return '归档'
+  if (role === '\\junk') return '垃圾邮件'
+  if (role === '\\trash') return '已删除'
+  return folder.name
+}
 export function EmailApp({ themeMode, setThemeMode, dark }: {
   themeMode: ThemeMode; setThemeMode: (mode: ThemeMode) => void; dark: boolean
 }): React.JSX.Element {
@@ -35,7 +45,10 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     settings, setSettings, hasAiKey, setHasAiKey, availableModels, setAvailableModels,
     modelsLoading, setModelsLoading, settingsNotice, setSettingsNotice } = useAccountSettingsState()
   const { folder, setFolder, view, setView, mails, setMails, selected, setSelected, detail, setDetail,
-    mailLoading, setMailLoading, detailLoading, setDetailLoading, refreshTick, setRefreshTick,
+    folders, setFolders, folderAccountId, setFolderAccountId, foldersLoading, setFoldersLoading,
+    mailNextCursor, setMailNextCursor, mailTruncated, setMailTruncated, mailWarnings, setMailWarnings,
+    mailLoadingMore, setMailLoadingMore, mailQuery, setMailQuery, mailSearchDraft, setMailSearchDraft,
+    mailNavigation, mailLoading, setMailLoading, detailLoading, setDetailLoading, refreshTick, setRefreshTick,
     promptOpen, setPromptOpen, prompt, setPrompt, promptBusy, setPromptBusy, composeOpen, setComposeOpen,
     composePreview, setComposePreview, composeBusy, setComposeBusy, draft, setDraft, pendingSource } = useMailState()
   const { digest, setDigest, digestHistory, setDigestHistory, digestError, setDigestError,
@@ -77,14 +90,62 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
   }, [view, activeUser, accounts.length])
 
   useEffect(() => {
-    if (!accountId || view !== 'mail') return
+    if (!accountId) {
+      setFolders([])
+      setFolderAccountId('')
+      return
+    }
     let cancelled = false
+    setFoldersLoading(true)
     setMailLoading(true)
+    setMails([])
     setSelected(null)
     setDetail(null)
-    void api.listMail(accountId, folder).then((items) => {
+    setMailWarnings([])
+    setFolderAccountId('')
+    void api.listMailFolders(accountId).then((items) => {
+      if (cancelled) return
+      const saved = mailNavigation.current[accountId]
+      const pending = pendingSource.current?.mail.accountId === accountId ? pendingSource.current.mail.folder : ''
+      const desired = pending || saved?.folder || 'INBOX'
+      const selectedFolder = items.find((item) => item.path === desired && item.selectable) ||
+        items.find((item) => item.specialUse?.toLowerCase() === '\\inbox' && item.selectable) ||
+        items.find((item) => item.path.toUpperCase() === 'INBOX' && item.selectable) ||
+        items.find((item) => item.selectable)
+      const query = pending ? {} : saved?.query || {}
+      setFolders(items)
+      setFolder(selectedFolder?.path || 'INBOX')
+      setMailQuery(query)
+      setMailSearchDraft(query)
+      mailNavigation.current[accountId] = { folder: selectedFolder?.path || 'INBOX', query }
+      if (desired !== (selectedFolder?.path || 'INBOX')) setMailWarnings(['原文件夹已不存在，已回退到可用文件夹'])
+      setFolderAccountId(accountId)
+    }).catch((err) => {
       if (!cancelled) {
-        setMails(items)
+        setFolders([])
+        setMailWarnings([errorText(err)])
+        setMailLoading(false)
+      }
+    }).finally(() => { if (!cancelled) setFoldersLoading(false) })
+    return () => { cancelled = true }
+  }, [api, accountId, refreshTick])
+
+  useEffect(() => {
+    if (!accountId || view !== 'mail') return
+    if (folderAccountId !== accountId) return
+    let cancelled = false
+    setMailLoading(true)
+    setMailNextCursor('')
+    setMailTruncated(false)
+    setMailWarnings((current) => current.filter((warning) => warning.includes('已回退')))
+    setSelected(null)
+    setDetail(null)
+    void api.listMail(accountId, folder, { limit: 50, query: mailQuery }).then((page) => {
+      if (!cancelled) {
+        setMails(page.messages)
+        setMailNextCursor(page.nextCursor || '')
+        setMailTruncated(page.truncated)
+        setMailWarnings((current) => [...current.filter((warning) => warning.includes('已回退')), ...page.warnings])
         const source = pendingSource.current
         if (source && source.mail.accountId === accountId && source.mail.folder === folder) {
           pendingSource.current = null
@@ -92,14 +153,15 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
         }
       }
     }).catch((err) => {
-      if (!cancelled) setError(errorText(err))
+      if (!cancelled) { setMails([]); setMailWarnings([errorText(err)]) }
     }).finally(() => {
       if (!cancelled) setMailLoading(false)
     })
     return () => { cancelled = true }
-  }, [api, accountId, folder, refreshTick, view])
+  }, [api, accountId, folder, folderAccountId, mailQuery, view])
 
   const activeAccount = accounts.find((account) => account.id === accountId)
+  const activeFolder = folders.find((item) => item.path === folder)
 
   async function loadSession(): Promise<void> {
     const bootstrap = await api.getBootstrapStatus()
@@ -176,6 +238,16 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     setAccountId('')
     setAccountBusy(false)
     setMails([])
+    setFolders([])
+    setFolderAccountId('')
+    setFoldersLoading(false)
+    setMailNextCursor('')
+    setMailTruncated(false)
+    setMailWarnings([])
+    setMailLoadingMore(false)
+    setMailQuery({})
+    setMailSearchDraft({})
+    mailNavigation.current = {}
     setSelected(null)
     setDetail(null)
     setMailLoading(false)
@@ -284,17 +356,54 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     }
   }
 
-  async function showSent(): Promise<void> {
+  function selectMailFolder(path: string): void {
     if (!accountId) return
+    mailNavigation.current[accountId] = { folder: path, query: mailQuery }
+    setMailWarnings([])
+    setFolder(path)
+    setView('mail')
+  }
+
+  function applyMailSearch(): void {
+    if (!accountId) return
+    const query = {
+      ...(mailSearchDraft.subject?.trim() ? { subject: mailSearchDraft.subject.trim() } : {}),
+      ...(mailSearchDraft.from?.trim() ? { from: mailSearchDraft.from.trim() } : {}),
+      ...(mailSearchDraft.since ? { since: mailSearchDraft.since } : {}),
+      ...(mailSearchDraft.before ? { before: mailSearchDraft.before } : {}),
+      ...(mailSearchDraft.unread === undefined ? {} : { unread: mailSearchDraft.unread })
+    }
+    mailNavigation.current[accountId] = { folder, query }
+    setMailQuery(query)
+  }
+
+  function clearMailSearch(): void {
+    if (!accountId) return
+    mailNavigation.current[accountId] = { folder, query: {} }
+    setMailSearchDraft({})
+    setMailQuery({})
+  }
+
+  async function loadMoreMail(): Promise<void> {
+    if (!accountId || !mailNextCursor || mailLoadingMore) return
     const epoch = sessionEpoch.current
+    const expected = { accountId, folder, cursor: mailNextCursor }
+    setMailLoadingMore(true)
     try {
-      const sent = await api.getSentFolder(accountId)
-      if (epoch !== sessionEpoch.current) return
-      if (!sent) throw new Error('邮箱服务商没有提供可识别的已发送文件夹')
-      setFolder(sent)
-      setView('mail')
+      const page = await api.listMail(accountId, folder, { cursor: mailNextCursor, limit: 50, query: mailQuery })
+      if (epoch !== sessionEpoch.current || expected.accountId !== accountId || expected.folder !== folder ||
+        expected.cursor !== mailNextCursor) return
+      setMails((current) => {
+        const seen = new Set(current.map((item) => `${item.folder}\0${item.uid}`))
+        return [...current, ...page.messages.filter((item) => !seen.has(`${item.folder}\0${item.uid}`))]
+      })
+      setMailNextCursor(page.nextCursor || '')
+      setMailTruncated(page.truncated)
+      setMailWarnings((current) => [...new Set([...current, ...page.warnings])])
     } catch (err) {
-      if (epoch === sessionEpoch.current) setError(errorText(err))
+      if (epoch === sessionEpoch.current) setMailWarnings((current) => [...current, errorText(err)])
+    } finally {
+      if (epoch === sessionEpoch.current) setMailLoadingMore(false)
     }
   }
 
@@ -307,7 +416,6 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       if (epoch !== sessionEpoch.current) return
       setAccounts((items) => [...items, added])
       setAccountId(added.id)
-      setFolder('INBOX')
       setView('mail')
       setAccountOpen(false)
       setAccountForm({ provider: 'qq', address: '', authorizationCode: '' })
@@ -326,9 +434,9 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       await api.removeAccount(accountId)
       if (epoch !== sessionEpoch.current) return
       const remaining = accounts.filter((account) => account.id !== accountId)
+      delete mailNavigation.current[accountId]
       setAccounts(remaining)
       setAccountId(remaining[0]?.id || '')
-      setFolder('INBOX')
       setMails([])
       setDetail(null)
     } catch (err) {
@@ -603,15 +711,19 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
 
   function openDigestSource(source: MailSummary): void {
     pendingSource.current = { mail: source, markRead: true }
+    mailNavigation.current[source.accountId] = { folder: source.folder, query: {} }
     setAccountId(source.accountId)
-    setFolder(source.folder)
+    setFolderAccountId('')
+    setRefreshTick((value) => value + 1)
     setView('mail')
   }
 
   function openAgentSource(source: MailSummary): void {
     pendingSource.current = { mail: source, markRead: false }
+    mailNavigation.current[source.accountId] = { folder: source.folder, query: {} }
     setAccountId(source.accountId)
-    setFolder(source.folder)
+    setFolderAccountId('')
+    setRefreshTick((value) => value + 1)
     setView('mail')
   }
 
@@ -652,10 +764,6 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand">Email<span>Agent</span></div>
-      <button className={`nav-item ${view === 'mail' && folder === 'INBOX' ? 'active' : ''}`}
-        onClick={() => { setFolder('INBOX'); setView('mail') }}>收件箱</button>
-      <button className={`nav-item ${view === 'mail' && folder !== 'INBOX' ? 'active' : ''}`}
-        disabled={!accountId} onClick={() => void showSent()}>已发送</button>
       <button className={`nav-item ${view === 'digest' ? 'active' : ''}`}
         disabled={!accounts.length} onClick={() => { setView('digest'); if (!digest) void createDigest() }}>今日摘要</button>
       <button className={`nav-item ${view === 'agent' ? 'active' : ''}`}
@@ -663,9 +771,13 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       <div className="sidebar-label">邮箱账户</div>
       {accounts.map((account) => <button key={account.id}
         className={`account-item ${account.id === accountId ? 'active' : ''}`}
-        onClick={() => { setAccountId(account.id); setFolder('INBOX'); setView('mail') }}>
+        onClick={() => { setAccountId(account.id); setView('mail') }}>
         <span>{account.address}</span>
       </button>)}
+      <div className="sidebar-label">邮箱文件夹</div>
+      {foldersLoading ? <div className="sidebar-note">正在加载…</div> : folders.filter((item) => item.selectable).map((item) =>
+        <button key={item.id} className={`nav-item ${view === 'mail' && item.path === folder ? 'active' : ''}`}
+          onClick={() => selectMailFolder(item.path)}>{folderLabel(item)}{item.readOnly ? '（只读）' : ''}</button>)}
       <div className="sidebar-bottom">
         <button className="account-trigger" onClick={() => setAccountSettingsOpen(true)}
           aria-label={`${activeUser}，打开设置`}>
@@ -678,11 +790,12 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     <main className="workspace">
       <header className="topbar">
         <div>
-          <h1>{view === 'agent' ? '对话' : view === 'digest' ? '今日摘要' : folder === 'INBOX' ? '收件箱' : '已发送'}</h1>
+          <h1>{view === 'agent' ? '对话' : view === 'digest' ? '今日摘要' : activeFolder ? folderLabel(activeFolder) : '邮件'}</h1>
           {view !== 'agent' && <p>{view === 'digest' ? '汇总今天收到的邮件' : activeAccount?.address || '请先添加邮箱账户'}</p>}
         </div>
         <div className="topbar-actions">
-          {view === 'mail' && <Button onClick={() => setRefreshTick((value) => value + 1)} disabled={!accountId}>刷新</Button>}
+          {view === 'mail' && <Button onClick={() => { setFolderAccountId(''); setRefreshTick((value) => value + 1) }}
+            disabled={!accountId}>刷新</Button>}
           {view === 'digest' && <Button onClick={() => void createDigest()} loading={digestLoading} disabled={!accounts.length}>重新生成</Button>}
           {view === 'agent' && <Button onClick={() => { setAgentConversationId(''); setAgentProposal(null) }}>新对话</Button>}
           <Button onClick={() => void openPrompt()} disabled={!accountId}>一句话写邮件</Button>
@@ -705,7 +818,10 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
           onSelect={(generatedAt) => setDigest(digestHistory.find((item) => item.generatedAt === generatedAt) || null)}
           onRetry={() => void createDigest()} onOpenSource={openDigestSource} /> :
         <MailView accountId={accountId} mails={mails} selected={selected} detail={detail}
-          mailLoading={mailLoading} detailLoading={detailLoading}
+          mailLoading={mailLoading} detailLoading={detailLoading} search={mailSearchDraft}
+          warnings={mailWarnings} truncated={mailTruncated} hasMore={Boolean(mailNextCursor)} loadingMore={mailLoadingMore}
+          onSearch={setMailSearchDraft} onApplySearch={applyMailSearch} onClearSearch={clearMailSearch}
+          onLoadMore={() => void loadMoreMail()}
           onOpenMail={(mail) => void openMail(mail)} onOpenLink={openMailLink} onReply={() => newMessage(true)} />}
     </main>
 

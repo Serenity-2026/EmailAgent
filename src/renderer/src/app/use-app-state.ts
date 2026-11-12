@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import type {
   Account, AccountInput, AgentConversation, AgentProposal, AiSettingsInput, DigestHistoryItem,
-  MailDetail, MailDraft, MailOverview, MailSummary
+  MailDetail, MailDraft, MailFolder, MailOverview, MailSearchQuery, MailSummary
 } from '../../../shared/models'
 
 const emptyDraft = (accountId: string): MailDraft => ({ accountId, to: '', subject: '', text: '' })
@@ -61,8 +61,18 @@ export function useAccountSettingsState() {
 
 export function useMailState() {
   const [folder, setFolder] = useState('INBOX')
+  const [folders, setFolders] = useState<MailFolder[]>([])
+  const [folderAccountId, setFolderAccountId] = useState('')
+  const [foldersLoading, setFoldersLoading] = useState(false)
   const [view, setView] = useState<'mail' | 'digest' | 'agent'>('mail')
   const [mails, setMails] = useState<MailSummary[]>([])
+  const [mailNextCursor, setMailNextCursor] = useState('')
+  const [mailTruncated, setMailTruncated] = useState(false)
+  const [mailWarnings, setMailWarnings] = useState<string[]>([])
+  const [mailLoadingMore, setMailLoadingMore] = useState(false)
+  const [mailQuery, setMailQuery] = useState<MailSearchQuery>({})
+  const [mailSearchDraft, setMailSearchDraft] = useState<MailSearchQuery>({})
+  const mailNavigation = useRef<Record<string, { folder: string; query: MailSearchQuery }>>({})
   const [selected, setSelected] = useState<MailSummary | null>(null)
   const [detail, setDetail] = useState<MailDetail | null>(null)
   const [mailLoading, setMailLoading] = useState(false)
@@ -76,8 +86,12 @@ export function useMailState() {
   const [composeBusy, setComposeBusy] = useState(false)
   const [draft, setDraft] = useState<MailDraft>(emptyDraft(''))
   const pendingSource = useRef<{ mail: MailSummary; markRead: boolean } | null>(null)
-  return { folder, setFolder, view, setView, mails, setMails, selected, setSelected, detail, setDetail,
-    mailLoading, setMailLoading, detailLoading, setDetailLoading, refreshTick, setRefreshTick,
+  return { folder, setFolder, folders, setFolders, folderAccountId, setFolderAccountId,
+    foldersLoading, setFoldersLoading, view, setView, mails, setMails, mailNextCursor, setMailNextCursor,
+    mailTruncated, setMailTruncated, mailWarnings, setMailWarnings, mailLoadingMore, setMailLoadingMore,
+    mailQuery, setMailQuery, mailSearchDraft, setMailSearchDraft, mailNavigation,
+    selected, setSelected, detail, setDetail, mailLoading, setMailLoading,
+    detailLoading, setDetailLoading, refreshTick, setRefreshTick,
     promptOpen, setPromptOpen, prompt, setPrompt, promptBusy, setPromptBusy, composeOpen, setComposeOpen,
     composePreview, setComposePreview, composeBusy, setComposeBusy, draft, setDraft, pendingSource }
 }
