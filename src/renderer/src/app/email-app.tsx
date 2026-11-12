@@ -17,6 +17,9 @@ declare global {
 }
 
 const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error)
+const draftKey = (draft: ReturnType<typeof emptyDraft>): string => JSON.stringify(draft)
+const hasDraftContent = (draft: ReturnType<typeof emptyDraft>): boolean =>
+  Boolean(draft.to.trim() || draft.subject.trim() || draft.text.trim())
 const folderLabel = (folder: MailFolder): string => {
   const role = folder.specialUse?.toLowerCase()
   if (role === '\\inbox' || folder.path.toUpperCase() === 'INBOX') return '收件箱'
@@ -53,7 +56,9 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     mailLoadingMore, setMailLoadingMore, mailQuery, setMailQuery, mailSearchDraft, setMailSearchDraft,
     mailNavigation, mailLoading, setMailLoading, detailLoading, setDetailLoading, refreshTick, setRefreshTick,
     promptOpen, setPromptOpen, prompt, setPrompt, promptBusy, setPromptBusy, composeOpen, setComposeOpen,
-    composePreview, setComposePreview, composeBusy, setComposeBusy, draft, setDraft, pendingSource } = useMailState()
+    composePreview, setComposePreview, composeBusy, setComposeBusy, draft, setDraft,
+    savedDrafts, setSavedDrafts, activeDraftId, setActiveDraftId, draftSnapshot, setDraftSnapshot,
+    draftSaving, setDraftSaving, pendingSource } = useMailState()
   const { digest, setDigest, digestHistory, setDigestHistory, digestError, setDigestError,
     digestLoading, setDigestLoading } = useDigestState()
   const { agentConversations, setAgentConversations, agentConversationId, setAgentConversationId,
@@ -61,6 +66,13 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     agentStatus, setAgentStatus,
     agentProposal, setAgentProposal, overview, setOverview, overviewLoading, setOverviewLoading,
     overviewError, setOverviewError, agentMessagesRef, agentScrollState, overviewShown } = useAgentState()
+  const composeDirty = composeOpen && hasDraftContent(draft) && draftKey(draft) !== draftSnapshot
+
+  useEffect(() => {
+    void api.setComposeDirty(composeDirty).catch(() => undefined)
+  }, [api, composeDirty])
+
+  useEffect(() => () => { void api.setComposeDirty(false).catch(() => undefined) }, [api])
 
   useEffect(() => {
     void loadSession().catch((err) => {
@@ -178,8 +190,8 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     const { username } = await api.getSession()
     setActiveUser(username)
     if (username) {
-      const [items, history, digests, mode] = await Promise.all([
-        api.listAccounts(), api.listAgentConversations(), api.listDigestHistory(), api.getThemeMode()
+      const [items, history, digests, drafts, mode] = await Promise.all([
+        api.listAccounts(), api.listAgentConversations(), api.listDigestHistory(), api.listSavedDrafts(), api.getThemeMode()
       ])
       setAccounts(items)
       setAccountId(items[0]?.id || '')
@@ -187,6 +199,7 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       setAgentConversationId(history[0]?.id || '')
       setDigestHistory(digests)
       setDigest(digests[0] || null)
+      setSavedDrafts(drafts)
       setThemeMode(mode)
     }
     setConnectionStatus('ready')
@@ -300,6 +313,10 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     setComposeOpen(false)
     setComposeBusy(false)
     setDraft(emptyDraft(''))
+    setSavedDrafts([])
+    setActiveDraftId('')
+    setDraftSnapshot('')
+    setDraftSaving(false)
     setAccountForm({ provider: 'qq', address: '', authorizationCode: '' })
     setSettings({ baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false })
     setHasAiKey(false)
@@ -498,6 +515,13 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
         return next
       })
       setAccounts(remaining)
+      setSavedDrafts((items) => items.filter((item) => item.draft.accountId !== accountId))
+      if (draft.accountId === accountId) {
+        setComposeOpen(false)
+        setActiveDraftId('')
+        setDraftSnapshot('')
+        setDraft(emptyDraft(remaining[0]?.id || ''))
+      }
       setAccountId(remaining[0]?.id || '')
       setMails([])
       setDetail(null)
@@ -586,6 +610,8 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       subject: reply && detail ? (detail.subject.startsWith('Re:') ? detail.subject : `Re: ${detail.subject}`) : '',
       replyTo: reply && detail ? { uid: detail.uid, folder: detail.folder, uidValidity: detail.uidValidity } : undefined
     })
+    setActiveDraftId('')
+    setDraftSnapshot('')
     setComposePreview(false)
     setComposeOpen(true)
   }
@@ -612,6 +638,8 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       const result = await api.generateDraft(prompt, accountId)
       if (epoch !== sessionEpoch.current) return
       setDraft(result)
+      setActiveDraftId('')
+      setDraftSnapshot('')
       setComposePreview(false)
       setPromptOpen(false)
       setComposeOpen(true)
@@ -622,18 +650,98 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     }
   }
 
+  function closeCompose(): void {
+    const close = (): void => {
+      const saved = savedDrafts.find((item) => item.id === activeDraftId)
+      setDraft(saved?.draft || emptyDraft(accountId))
+      setDraftSnapshot(saved ? draftKey(saved.draft) : '')
+      if (!saved) setActiveDraftId('')
+      setComposePreview(false)
+      setComposeOpen(false)
+    }
+    if (!composeDirty) { close(); return }
+    Modal.confirm({
+      title: '放弃未保存的修改？', content: '可以先保存草稿，再关闭撰写窗口。',
+      okText: '放弃修改', cancelText: '继续编辑', okButtonProps: { danger: true }, onOk: close
+    })
+  }
+
+  async function saveCurrentDraft(): Promise<void> {
+    const epoch = sessionEpoch.current
+    setDraftSaving(true)
+    setError('')
+    try {
+      const saved = await api.saveDraft(activeDraftId, draft)
+      if (epoch !== sessionEpoch.current) return
+      setSavedDrafts((items) => [saved, ...items.filter((item) => item.id !== saved.id)].slice(0, 20))
+      setActiveDraftId(saved.id)
+      setDraftSnapshot(draftKey(saved.draft))
+    } catch (err) {
+      if (epoch === sessionEpoch.current) setError(errorText(err))
+    } finally {
+      if (epoch === sessionEpoch.current) setDraftSaving(false)
+    }
+  }
+
+  function loadSavedDraft(id: string): void {
+    const saved = savedDrafts.find((item) => item.id === id)
+    if (!saved) return
+    const load = (): void => {
+      setDraft(saved.draft)
+      setActiveDraftId(saved.id)
+      setDraftSnapshot(draftKey(saved.draft))
+      setComposePreview(false)
+    }
+    if (!composeDirty) { load(); return }
+    Modal.confirm({
+      title: '载入其他草稿？', content: '当前未保存的修改会被放弃。',
+      okText: '载入', cancelText: '取消', onOk: load
+    })
+  }
+
+  async function deleteCurrentDraft(): Promise<void> {
+    if (!activeDraftId) return
+    const id = activeDraftId
+    const epoch = sessionEpoch.current
+    setError('')
+    try {
+      await api.removeSavedDraft(id)
+      if (epoch !== sessionEpoch.current) return
+      setSavedDrafts((items) => items.filter((item) => item.id !== id))
+      setActiveDraftId('')
+      setDraft(emptyDraft(accountId))
+      setDraftSnapshot('')
+      setComposePreview(false)
+    } catch (err) {
+      if (epoch === sessionEpoch.current) setError(errorText(err))
+    }
+  }
+
   async function send(): Promise<void> {
     const epoch = sessionEpoch.current
     setComposeBusy(true)
     setError('')
     try {
-      await api.sendMail(draft)
+      try {
+        await api.sendMail(draft)
+      } catch (err) {
+        if (epoch === sessionEpoch.current) setError(errorText(err))
+        return
+      }
       if (epoch !== sessionEpoch.current) return
+      let cleanupFailed = false
+      if (activeDraftId) {
+        try { await api.removeSavedDraft(activeDraftId) } catch { cleanupFailed = true }
+        if (epoch !== sessionEpoch.current) return
+        if (!cleanupFailed) setSavedDrafts((items) => items.filter((item) => item.id !== activeDraftId))
+      }
       setComposeOpen(false)
       setComposePreview(false)
+      setActiveDraftId('')
+      setDraftSnapshot('')
+      setDraft(emptyDraft(accountId))
       setRefreshTick((value) => value + 1)
-    } catch (err) {
-      if (epoch === sessionEpoch.current) setError(errorText(err))
+      if (cleanupFailed) setError('邮件已发送，但已保存草稿清理失败，请手动删除该草稿')
     } finally {
       if (epoch === sessionEpoch.current) setComposeBusy(false)
     }
@@ -873,7 +981,9 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
         dark={dark} accountCount={accounts.length} messagesRef={agentMessagesRef}
         onClear={clearAgentHistory} onSelectConversation={(id) => { setAgentConversationId(id); setAgentProposal(null) }}
         onLoadOverview={() => void loadOverview()} onOpenSource={openAgentSource}
-        onOpenDraft={(nextDraft) => { setDraft(nextDraft); setComposePreview(false); setComposeOpen(true) }}
+        onOpenDraft={(nextDraft) => {
+          setDraft(nextDraft); setActiveDraftId(''); setDraftSnapshot(''); setComposePreview(false); setComposeOpen(true)
+        }}
         onConfirm={confirmAgentActions} onPrompt={setAgentPrompt} onRun={() => void runAgent()}
         onCancel={() => void cancelAgent()} /> : view === 'digest' ?
         <DigestView digest={digest} history={digestHistory} loading={digestLoading} error={digestError}
@@ -916,7 +1026,10 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
 
     <ComposeDialogs error={error} accounts={accounts} promptOpen={promptOpen} prompt={prompt}
       promptBusy={promptBusy} composeOpen={composeOpen} preview={composePreview} composeBusy={composeBusy}
-      draft={draft} onPromptOpen={setPromptOpen} onPrompt={setPrompt} onGenerate={() => void generateMailDraft()}
-      onComposeOpen={setComposeOpen} onPreview={setComposePreview} onDraft={setDraft} onSend={() => void send()} />
+      draft={draft} savedDrafts={savedDrafts} activeDraftId={activeDraftId} draftSaving={draftSaving} dirty={composeDirty}
+      onPromptOpen={setPromptOpen} onPrompt={setPrompt} onGenerate={() => void generateMailDraft()}
+      onClose={closeCompose} onPreview={setComposePreview} onDraft={setDraft}
+      onSaveDraft={() => void saveCurrentDraft()} onLoadDraft={loadSavedDraft}
+      onDeleteDraft={() => void deleteCurrentDraft()} onSend={() => void send()} />
   </div>
 }

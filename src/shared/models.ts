@@ -83,6 +83,12 @@ export interface MailDraft {
   replyTo?: { uid: number; folder: string; uidValidity?: string }
 }
 
+export interface SavedDraft {
+  id: string
+  updatedAt: string
+  draft: MailDraft
+}
+
 export interface AiSettingsInput {
   baseUrl: string
   model: string
@@ -219,6 +225,10 @@ export interface DesktopApi {
   openExternalLink(url: string): Promise<void>
   getSentFolder(accountId: string): Promise<string | null>
   sendMail(draft: MailDraft): Promise<void>
+  listSavedDrafts(): Promise<SavedDraft[]>
+  saveDraft(id: string, draft: MailDraft): Promise<SavedDraft>
+  removeSavedDraft(id: string): Promise<void>
+  setComposeDirty(dirty: boolean): Promise<void>
   getAiSettings(): Promise<AiSettingsView>
   listAiModels(baseUrl: string, apiKey: string): Promise<string[]>
   saveAiSettings(input: AiSettingsInput): Promise<void>

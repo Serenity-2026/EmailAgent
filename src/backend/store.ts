@@ -1,6 +1,9 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
-import type { AgentConversation, AiSettingsInput, DigestHistoryItem, ThemeMode } from '../shared/models'
-import { currentConversations, currentDigestHistory, decryptVault, emptyData, encryptVault, keyFor, type StoredAccount, type StoredData } from '../shared/vault'
+import type { AgentConversation, AiSettingsInput, DigestHistoryItem, SavedDraft, ThemeMode } from '../shared/models'
+import {
+  currentConversations, currentDigestHistory, currentSavedDrafts, decryptVault, emptyData, encryptVault, keyFor,
+  type StoredAccount, type StoredData
+} from '../shared/vault'
 import { Database } from './database'
 
 export class MysqlStore {
@@ -47,6 +50,7 @@ export class MysqlStore {
   get ai(): AiSettingsInput { this.ensureReady(); return this.data.ai }
   get agentConversations(): AgentConversation[] { this.ensureReady(); return currentConversations(this.data.agentConversations) }
   get digestHistory(): DigestHistoryItem[] { this.ensureReady(); return currentDigestHistory(this.data.digestHistory) }
+  get savedDrafts(): SavedDraft[] { this.ensureReady(); return currentSavedDrafts(this.data.savedDrafts) }
   get themeMode(): ThemeMode { this.ensureReady(); return this.data.themeMode === 'dark' || this.data.themeMode === 'light' ? this.data.themeMode : 'system' }
 
   async createSession(): Promise<string> { this.ensureReady(); return this.db.createSession(this.username, this.key) }
@@ -71,10 +75,16 @@ export class MysqlStore {
     if (version === this.version) { this.data = data; this.revision++ }
   }
   async setAccounts(accounts: StoredAccount[]): Promise<void> { await this.save({ ...this.data, accounts }) }
+  async setAccountsAndSavedDrafts(accounts: StoredAccount[], savedDrafts: SavedDraft[]): Promise<void> {
+    await this.save({ ...this.data, accounts, savedDrafts: currentSavedDrafts(savedDrafts) })
+  }
   async setAi(ai: AiSettingsInput): Promise<void> { await this.save({ ...this.data, ai }) }
   async setAgentConversations(items: AgentConversation[]): Promise<void> { await this.save({ ...this.data, agentConversations: currentConversations(items) }) }
   async setDigestHistory(items: DigestHistoryItem[]): Promise<void> {
     await this.save({ ...this.data, digestHistory: currentDigestHistory(items) })
+  }
+  async setSavedDrafts(items: SavedDraft[]): Promise<void> {
+    await this.save({ ...this.data, savedDrafts: currentSavedDrafts(items) })
   }
   async setThemeMode(mode: ThemeMode): Promise<void> {
     if (mode !== 'system' && mode !== 'light' && mode !== 'dark') throw new Error('主题选项无效')

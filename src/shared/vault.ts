@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto'
-import type { Account, AgentConversation, AiSettingsInput, DigestHistoryItem, MailSummary, ThemeMode } from './models'
+import type { Account, AgentConversation, AiSettingsInput, DigestHistoryItem, MailDraft, MailSummary, SavedDraft, ThemeMode } from './models'
 
 export interface StoredAccount extends Account {
   authorizationCode: string
@@ -10,6 +10,7 @@ export interface StoredData {
   ai: AiSettingsInput
   digestHistory?: DigestHistoryItem[]
   agentConversations?: AgentConversation[]
+  savedDrafts?: SavedDraft[]
   themeMode?: ThemeMode
 }
 
@@ -31,6 +32,7 @@ export const emptyData = (): StoredData => ({
   ai: { baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false },
   digestHistory: [],
   agentConversations: [],
+  savedDrafts: [],
   themeMode: 'system'
 })
 
@@ -83,6 +85,40 @@ export function currentDigestHistory(items: unknown, now = Date.now()): DigestHi
     unique.add(key)
     return true
   }).slice(0, 14)
+}
+
+function savedMailDraft(value: unknown): MailDraft | null {
+  if (!value || typeof value !== 'object') return null
+  const draft = value as Record<string, unknown>
+  if (typeof draft.accountId !== 'string' || typeof draft.to !== 'string' || draft.to.length > 2000 ||
+    typeof draft.subject !== 'string' || draft.subject.length > 2000 ||
+    typeof draft.text !== 'string' || draft.text.length > 1_000_000) return null
+  let replyTo: MailDraft['replyTo']
+  if (draft.replyTo !== undefined) {
+    if (!draft.replyTo || typeof draft.replyTo !== 'object') return null
+    const reply = draft.replyTo as Record<string, unknown>
+    if (!Number.isSafeInteger(reply.uid) || Number(reply.uid) <= 0 || typeof reply.folder !== 'string' ||
+      (reply.uidValidity !== undefined && typeof reply.uidValidity !== 'string')) return null
+    replyTo = { uid: Number(reply.uid), folder: reply.folder, ...(reply.uidValidity === undefined ? {} : { uidValidity: reply.uidValidity as string }) }
+  }
+  return { accountId: draft.accountId, to: draft.to, subject: draft.subject, text: draft.text, ...(replyTo ? { replyTo } : {}) }
+}
+
+export function currentSavedDrafts(items: unknown): SavedDraft[] {
+  if (!Array.isArray(items)) return []
+  const ids = new Set<string>()
+  return items.flatMap((value) => {
+    if (!value || typeof value !== 'object') return []
+    const item = value as Record<string, unknown>
+    const timestamp = typeof item.updatedAt === 'string' ? Date.parse(item.updatedAt) : NaN
+    const draft = savedMailDraft(item.draft)
+    if (typeof item.id !== 'string' || !item.id || item.id.length > 100 || !Number.isFinite(timestamp) || !draft) return []
+    return [{ id: item.id, updatedAt: item.updatedAt as string, draft } satisfies SavedDraft]
+  }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).filter((item) => {
+    if (ids.has(item.id)) return false
+    ids.add(item.id)
+    return true
+  }).slice(0, 20)
 }
 
 function isStoredData(value: unknown): value is StoredData {

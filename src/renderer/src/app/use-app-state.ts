@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import type {
   Account, AccountHealth, AccountInput, AgentConversation, AgentProposal, AiSettingsInput, DigestHistoryItem,
-  MailDetail, MailDraft, MailFolder, MailOverview, MailSearchQuery, MailSummary
+  MailDetail, MailDraft, MailFolder, MailOverview, MailSearchQuery, MailSummary, SavedDraft
 } from '../../../shared/models'
 
 const emptyDraft = (accountId: string): MailDraft => ({ accountId, to: '', subject: '', text: '' })
@@ -94,6 +94,10 @@ export function useMailState() {
   const [composePreview, setComposePreview] = useState(false)
   const [composeBusy, setComposeBusy] = useState(false)
   const [draft, setDraft] = useState<MailDraft>(emptyDraft(''))
+  const [savedDrafts, setSavedDrafts] = useState<SavedDraft[]>([])
+  const [activeDraftId, setActiveDraftId] = useState('')
+  const [draftSnapshot, setDraftSnapshot] = useState('')
+  const [draftSaving, setDraftSaving] = useState(false)
   const pendingSource = useRef<{ mail: MailSummary; markRead: boolean } | null>(null)
   return { folder, setFolder, folders, setFolders, folderAccountId, setFolderAccountId,
     foldersLoading, setFoldersLoading, view, setView, mails, setMails, mailNextCursor, setMailNextCursor,
@@ -102,7 +106,9 @@ export function useMailState() {
     selected, setSelected, detail, setDetail, mailLoading, setMailLoading,
     detailLoading, setDetailLoading, refreshTick, setRefreshTick,
     promptOpen, setPromptOpen, prompt, setPrompt, promptBusy, setPromptBusy, composeOpen, setComposeOpen,
-    composePreview, setComposePreview, composeBusy, setComposeBusy, draft, setDraft, pendingSource }
+    composePreview, setComposePreview, composeBusy, setComposeBusy, draft, setDraft,
+    savedDrafts, setSavedDrafts, activeDraftId, setActiveDraftId, draftSnapshot, setDraftSnapshot,
+    draftSaving, setDraftSaving, pendingSource }
 }
 
 export function useDigestState() {

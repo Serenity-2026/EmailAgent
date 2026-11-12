@@ -24,7 +24,7 @@ interface AgentJob {
 }
 
 const SERIALIZED_CHANNELS = new Set([
-  'auth:create', 'auth:password', 'accounts:remove', 'theme:set'
+  'auth:create', 'auth:password', 'accounts:remove', 'drafts:save', 'drafts:remove', 'theme:set'
 ])
 
 export class BackendContext {
@@ -175,7 +175,10 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
   })
   handlers.set('accounts:remove', async (id: string) => {
     accountById(id)
-    await store.setAccounts(store.accounts.filter((account) => account.id !== id))
+    await store.setAccountsAndSavedDrafts(
+      store.accounts.filter((account) => account.id !== id),
+      store.savedDrafts.filter((item) => item.draft.accountId !== id)
+    )
   })
   handlers.set('accounts:update-authorization', async (id: string, authorizationCode: string) => {
     const version = store.sessionVersion
@@ -238,6 +241,20 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
     return result
   })
   handlers.set('mail:send', (draft: MailDraft) => sendMail(accountById(draft.accountId), draft))
+  handlers.set('drafts:list', () => store.savedDrafts)
+  handlers.set('drafts:save', async (id: string, draft: MailDraft) => {
+    accountById(draft.accountId)
+    const record = {
+      id: id.trim() || randomUUID(),
+      updatedAt: new Date().toISOString(),
+      draft: { ...draft, accountId: draft.accountId, to: draft.to, subject: draft.subject, text: draft.text }
+    }
+    await store.setSavedDrafts([record, ...store.savedDrafts.filter((item) => item.id !== record.id)])
+    return record
+  })
+  handlers.set('drafts:remove', async (id: string) => {
+    await store.setSavedDrafts(store.savedDrafts.filter((item) => item.id !== id))
+  })
   handlers.set('ai:settings:get', () => {
     const { apiKey: _key, ...view } = store.ai
     return { ...view, hasApiKey: Boolean(store.ai.apiKey) }

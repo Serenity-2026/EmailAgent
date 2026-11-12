@@ -183,6 +183,22 @@ describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integr
     store.logout()
   })
 
+  it('keeps a bounded local draft encrypted across restart and deletes it explicitly', async () => {
+    const token = await login()
+    const added = await rpc('accounts:add', [account], token)
+    const saved = await rpc('drafts:save', ['', {
+      accountId: added.result.id, to: 'teacher@example.com', subject: '课程草稿', text: '私密草稿正文'
+    }], token)
+    expect(saved.status).toBe(200)
+    const [rows] = await db.pool.query('SELECT vault FROM users WHERE username = "dmc"')
+    expect(JSON.stringify(rows)).not.toContain('私密草稿正文')
+    await closeServer(); await startServer()
+    const restored = await rpc('drafts:list', [], token)
+    expect(restored.result).toEqual([saved.result])
+    await rpc('drafts:remove', [saved.result.id], token)
+    expect((await rpc('drafts:list', [], token)).result).toEqual([])
+  })
+
   it('keeps sessions and data after a backend restart and revokes them on logout', async () => {
     const token = await login()
     await rpc('accounts:add', [account], token)

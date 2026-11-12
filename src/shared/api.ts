@@ -2,6 +2,7 @@ export const API_CHANNELS = [
   'auth:bootstrap-status', 'auth:bootstrap', 'auth:session', 'auth:login', 'auth:logout', 'auth:create', 'auth:password',
   'accounts:list', 'accounts:add', 'accounts:remove', 'accounts:update-authorization', 'accounts:health',
   'mail:folders', 'mail:list', 'mail:get', 'mail:sent-folder', 'mail:send',
+  'drafts:list', 'drafts:save', 'drafts:remove',
   'ai:settings:get', 'ai:models', 'ai:settings:save', 'ai:settings:test', 'ai:draft', 'ai:digest', 'ai:digest:history',
   'agent:history', 'agent:overview', 'agent:run', 'agent:cancel', 'agent:confirm', 'agent:clear', 'theme:get', 'theme:set'
 ] as const
@@ -13,11 +14,12 @@ export function validateRpc(channel: string, args: unknown[]): void {
   let valid = false
   switch (channel) {
     case 'auth:bootstrap-status': case 'auth:session': case 'auth:logout': case 'accounts:list': case 'ai:settings:get': case 'ai:settings:test':
-    case 'ai:digest:history':
+    case 'ai:digest:history': case 'drafts:list':
     case 'agent:history': case 'agent:overview': case 'agent:clear': case 'theme:get': valid = args.length === 0; break
     case 'auth:bootstrap': case 'auth:login': case 'auth:create': case 'auth:password': case 'ai:models':
       valid = args.length === 2 && args.every((value) => string(value)); break
-    case 'accounts:remove': case 'accounts:health': case 'mail:folders': case 'mail:sent-folder': case 'agent:cancel': case 'agent:confirm': case 'theme:set':
+    case 'accounts:remove': case 'accounts:health': case 'mail:folders': case 'mail:sent-folder': case 'drafts:remove':
+    case 'agent:cancel': case 'agent:confirm': case 'theme:set':
       valid = args.length === 1 && string(args[0]); break
     case 'accounts:update-authorization':
       valid = args.length === 2 && string(args[0]) && string(args[1], 2000); break
@@ -54,9 +56,11 @@ export function validateRpc(channel: string, args: unknown[]): void {
       valid = args.length === 1 && object(input) && ['baseUrl', 'apiKey', 'model', 'dailyTime'].every((key) => string(input[key])) && typeof input.autoDaily === 'boolean'
       break
     }
-    case 'mail:send': {
-      const input = args[0]
-      valid = args.length === 1 && object(input) && ['accountId', 'to', 'subject'].every((key) => string(input[key])) && string(input.text, 1_000_000) &&
+    case 'mail:send': case 'drafts:save': {
+      const input = args[channel === 'drafts:save' ? 1 : 0]
+      valid = args.length === (channel === 'drafts:save' ? 2 : 1) &&
+        (channel !== 'drafts:save' || string(args[0], 100)) && object(input) &&
+        ['accountId', 'to', 'subject'].every((key) => string(input[key])) && string(input.text, 1_000_000) &&
         (input.replyTo === undefined || (object(input.replyTo) && uid(input.replyTo.uid) && string(input.replyTo.folder) &&
           (input.replyTo.uidValidity === undefined || string(input.replyTo.uidValidity))))
       break

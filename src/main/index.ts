@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import { API_CHANNELS } from '../shared/api'
 import { BackendClient } from './backend-client'
 import { LocalService } from './local-service'
@@ -8,6 +8,9 @@ import type { ThemeMode } from '../shared/models'
 let window: BrowserWindow | null = null
 let client: BackendClient
 let localService: LocalService | null = null
+let composeDirty = false
+let closePromptOpen = false
+let forceWindowClose = false
 const ownsInstance = app.requestSingleInstanceLock()
 if (!ownsInstance) app.quit()
 
@@ -24,7 +27,26 @@ function createWindow(): void {
   })
   window.webContents.on('will-navigate', (event) => event.preventDefault())
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  window.on('closed', () => { client.stopEvents(); window = null })
+  window.on('close', (event) => {
+    if (!composeDirty || forceWindowClose) return
+    event.preventDefault()
+    if (closePromptOpen || !window) return
+    closePromptOpen = true
+    void dialog.showMessageBox(window, {
+      type: 'warning', title: '有未保存的邮件', message: '当前邮件尚未保存为草稿。',
+      detail: '直接关闭会丢失这些修改。', buttons: ['继续编辑', '放弃修改并关闭'],
+      defaultId: 0, cancelId: 0, noLink: true
+    }).then(({ response }) => {
+      closePromptOpen = false
+      if (response !== 1 || !window) return
+      composeDirty = false
+      forceWindowClose = true
+      window.close()
+    })
+  })
+  window.on('closed', () => {
+    client.stopEvents(); window = null; composeDirty = false; closePromptOpen = false; forceWindowClose = false
+  })
   const load = process.env.ELECTRON_RENDERER_URL ? window.loadURL(process.env.ELECTRON_RENDERER_URL) : window.loadFile(join(__dirname, '../renderer/index.html'))
   void load.catch(() => emit('app:error', '界面加载失败，请重新启动应用'))
   client.startEvents()
@@ -50,6 +72,10 @@ function registerIpc(): void {
     const url = new URL(value)
     if (url.protocol !== 'https:' || !url.hostname || url.username || url.password) throw new Error('仅支持打开 HTTPS 链接')
     await shell.openExternal(url.toString())
+  })
+  ipcMain.handle('app:compose-dirty', (event, value: boolean) => {
+    if (event.senderFrame !== window?.webContents.mainFrame || typeof value !== 'boolean') throw new Error('草稿状态无效')
+    composeDirty = value
   })
 }
 

@@ -2,7 +2,7 @@
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Account, AgentConversation, AgentProposal, DesktopApi, MailSummary } from '../../shared/models'
+import type { Account, AgentConversation, AgentProposal, DesktopApi, MailSummary, SavedDraft } from '../../shared/models'
 
 vi.setConfig({ testTimeout: 15_000 })
 
@@ -14,6 +14,7 @@ const mail: MailSummary = {
 
 function apiFor(session: string | null, bootstrapRequired = false, demoMode = false): DesktopApi {
   let username = session
+  let savedDrafts: SavedDraft[] = []
   const conversation: AgentConversation = { id: 'conversation', updatedAt: new Date().toISOString(), messages: [
     { id: 'assistant', role: 'assistant', content: '已找到邮件 [1]', createdAt: new Date().toISOString(), sources: [
       { ...mail, accountAddress: account.address, uidValidity: '1', citationNumber: 1, archiveAvailable: true }
@@ -39,6 +40,14 @@ function apiFor(session: string | null, bootstrapRequired = false, demoMode = fa
     listMail: vi.fn(async () => ({ messages: [mail], truncated: false, warnings: [] })),
     getMail: vi.fn(), openExternalLink: vi.fn(async () => undefined),
     getSentFolder: vi.fn(async () => 'Sent'), sendMail: vi.fn(async () => undefined),
+    listSavedDrafts: vi.fn(async () => savedDrafts),
+    saveDraft: vi.fn(async (id, draft) => {
+      const saved = { id: id || 'saved-draft', updatedAt: new Date().toISOString(), draft }
+      savedDrafts = [saved, ...savedDrafts.filter((item) => item.id !== saved.id)]
+      return saved
+    }),
+    removeSavedDraft: vi.fn(async (id) => { savedDrafts = savedDrafts.filter((item) => item.id !== id) }),
+    setComposeDirty: vi.fn(async () => undefined),
     getAiSettings: vi.fn(async () => ({ baseUrl: 'https://example.com/v1', model: 'model', dailyTime: '09:00', autoDaily: false, hasApiKey: true })),
     listAiModels: vi.fn(async () => ['model']), saveAiSettings: vi.fn(async () => undefined),
     testAiConnection: vi.fn(async () => undefined), generateDraft: vi.fn(), generateDigest: vi.fn(),
@@ -183,6 +192,50 @@ describe('renderer critical paths', () => {
     await act(async () => buttonNamed(document, '验证并更新')?.click())
     await flush()
     expect(api.updateAccountAuthorizationCode).toHaveBeenCalledWith(account.id, 'replacement-code')
+  })
+
+  it('saves a local draft, warns about later edits and removes the saved draft after sending', async () => {
+    const api = apiFor('dmc')
+    window.emailAgent = api
+    const { EmailApp } = await import('./app/email-app')
+    const appRoot = createRoot(container)
+    root = appRoot
+    await act(async () => appRoot.render(<EmailApp themeMode="system" setThemeMode={() => undefined} dark={false} />))
+    await flush(); await flush()
+    await act(async () => buttonNamed(container, '写邮件')?.click())
+
+    const recipient = document.querySelector('.ant-modal input[placeholder="name@example.com"]') as HTMLInputElement
+    const subject = document.querySelector('.ant-modal input[placeholder="邮件主题"]') as HTMLInputElement
+    const body = document.querySelector('.ant-modal textarea') as HTMLTextAreaElement
+    const setInput = async (field: HTMLInputElement, value: string): Promise<void> => act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(field, value)
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await setInput(recipient, 'teacher@example.com')
+    await setInput(subject, '课程草稿')
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(body, '尚未发送的正文')
+      body.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await flush()
+    expect(vi.mocked(api.setComposeDirty).mock.calls.some(([dirty]) => dirty)).toBe(true)
+
+    await act(async () => buttonNamed(document, '保存草稿')?.click())
+    await flush()
+    expect(api.saveDraft).toHaveBeenCalledWith('', expect.objectContaining({ subject: '课程草稿', text: '尚未发送的正文' }))
+    expect(vi.mocked(api.setComposeDirty).mock.calls.at(-1)?.[0]).toBe(false)
+
+    await setInput(subject, '课程草稿（修改）')
+    await act(async () => buttonNamed(document, '取消')?.click())
+    await flush()
+    expect(document.body.textContent).toContain('放弃未保存的修改？')
+    await act(async () => buttonNamed(document, '继续编辑')?.click())
+
+    await act(async () => buttonNamed(document, '预览')?.click())
+    await act(async () => buttonNamed(document, '确认发送')?.click())
+    await flush()
+    expect(api.sendMail).toHaveBeenCalled()
+    expect(api.removeSavedDraft).toHaveBeenCalledWith('saved-draft')
   })
 
   it('navigates real folders, loads older mail, remembers account search state and falls back safely', async () => {

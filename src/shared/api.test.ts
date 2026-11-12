@@ -12,6 +12,8 @@ describe('RPC request validation', () => {
       'mail:folders': ['account'],
       'mail:list': ['account', 'INBOX', { limit: 50, query: {} }], 'mail:get': ['account', 'INBOX', 1, false],
       'mail:sent-folder': ['account'], 'mail:send': [{ accountId: 'account', to: 'one@example.com', subject: '主题', text: '正文' }],
+      'drafts:list': [], 'drafts:save': ['', { accountId: 'account', to: '', subject: '草稿', text: '正文' }],
+      'drafts:remove': ['draft'],
       'ai:settings:get': [], 'ai:models': ['https://example.com/v1', 'key'],
       'ai:settings:save': [{ baseUrl: 'https://example.com/v1', model: 'model', apiKey: 'key', dailyTime: '09:00', autoDaily: false }],
       'ai:settings:test': [], 'ai:draft': ['写一封邮件', 'account'], 'ai:digest': [['account']], 'ai:digest:history': [],
@@ -30,6 +32,7 @@ describe('RPC request validation', () => {
     expect(() => validateRpc('mail:list', ['account', 'INBOX', { limit: 51 }])).toThrow('请求参数无效')
     expect(() => validateRpc('mail:list', ['account', 'INBOX', { query: { since: 'yesterday' } }])).toThrow('请求参数无效')
     expect(() => validateRpc('accounts:update-authorization', ['account', 'x'.repeat(2001)])).toThrow('请求参数无效')
+    expect(() => validateRpc('drafts:save', ['', { accountId: 'account', to: '', subject: '', text: 'x'.repeat(1_000_001) }])).toThrow('请求参数无效')
     expect(() => validateRpc('agent:run', ['x'.repeat(10_001)])).toThrow('请求参数无效')
     expect(() => validateRpc('agent:run', ['总结邮件', '', 'not-a-job-id'])).toThrow('请求参数无效')
     expect(() => validateRpc('ai:digest', [Array.from({ length: 101 }, () => 'account')])).toThrow('请求参数无效')

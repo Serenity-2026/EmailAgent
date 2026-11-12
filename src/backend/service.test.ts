@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentConversation, AgentProgress, DigestHistoryItem } from '../shared/models'
+import type { AgentConversation, AgentProgress, DigestHistoryItem, SavedDraft } from '../shared/models'
 import type { StoredAccount } from '../shared/vault'
 import type { MysqlStore } from './store'
 
@@ -32,25 +32,34 @@ const jobIds = [
 
 function contextWithHistory(history: AgentConversation[] = []): {
   context: BackendContext
-  state: { active: boolean; version: number; accounts: StoredAccount[]; history: AgentConversation[]; digests: DigestHistoryItem[] }
+  state: { active: boolean; version: number; accounts: StoredAccount[]; history: AgentConversation[]
+    digests: DigestHistoryItem[]; drafts: SavedDraft[] }
   setAccounts: ReturnType<typeof vi.fn>
   setHistory: ReturnType<typeof vi.fn>
   setDigests: ReturnType<typeof vi.fn>
 } {
-  const state = { active: true, version: 0, accounts: [account], history, digests: [] as DigestHistoryItem[] }
+  const state = { active: true, version: 0, accounts: [account], history,
+    digests: [] as DigestHistoryItem[], drafts: [] as SavedDraft[] }
   const setAccounts = vi.fn(async (items: StoredAccount[]) => { state.accounts = items })
+  const setSavedDrafts = vi.fn(async (items: SavedDraft[]) => { state.drafts = items.slice(0, 20) })
+  const setAccountsAndSavedDrafts = vi.fn(async (items: StoredAccount[], drafts: SavedDraft[]) => {
+    await setAccounts(items)
+    state.drafts = drafts.slice(0, 20)
+  })
   const setHistory = vi.fn(async (items: AgentConversation[]) => { state.history = items })
   const setDigests = vi.fn(async (items: DigestHistoryItem[]) => { state.digests = items })
   const store = {
     ai: settings, themeMode: 'system',
     refresh: vi.fn(async () => undefined),
     logout: vi.fn(() => { state.active = false; state.version++ }),
-    setAccounts, setAgentConversations: setHistory, setDigestHistory: setDigests
+    setAccounts, setSavedDrafts, setAccountsAndSavedDrafts,
+    setAgentConversations: setHistory, setDigestHistory: setDigests
   } as Record<string, unknown>
   Object.defineProperties(store, {
     activeUsername: { get: () => state.active ? 'dmc' : null },
     sessionVersion: { get: () => state.version },
     accounts: { get: () => state.accounts },
+    savedDrafts: { get: () => state.drafts },
     agentConversations: { get: () => state.history },
     digestHistory: { get: () => state.digests }
   })
@@ -234,5 +243,29 @@ describe('BackendContext account maintenance', () => {
     const result = await context.invoke('accounts:health', [account.id])
     expect(result).toMatchObject({ accountId: account.id, imap: { ok: true }, smtp: { ok: false } })
     expect(JSON.stringify(result)).not.toContain(account.authorizationCode)
+  })
+})
+
+describe('BackendContext saved drafts', () => {
+  it('stores only a bounded encrypted-vault draft list and removes a selected draft', async () => {
+    const { context, state } = contextWithHistory()
+    for (let index = 0; index < 21; index++) {
+      await context.invoke('drafts:save', ['', {
+        accountId: account.id, to: 'teacher@example.com', subject: `草稿 ${index}`, text: `正文 ${index}`
+      }])
+    }
+    expect(state.drafts).toHaveLength(20)
+    expect(state.drafts[0].draft.subject).toBe('草稿 20')
+    expect(await context.invoke('drafts:list', [])).toEqual(state.drafts)
+    const removed = state.drafts[0].id
+    await context.invoke('drafts:remove', [removed])
+    expect(state.drafts.some((item) => item.id === removed)).toBe(false)
+  })
+
+  it('refuses to save a draft for an account that no longer exists', async () => {
+    const { context } = contextWithHistory()
+    await expect(context.invoke('drafts:save', ['', {
+      accountId: 'missing', to: '', subject: '孤立草稿', text: ''
+    }])).rejects.toThrow('邮箱账户不存在')
   })
 })

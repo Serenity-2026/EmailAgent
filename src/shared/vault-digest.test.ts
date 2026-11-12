@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { currentDigestHistory } from './vault'
+import { currentDigestHistory, currentSavedDrafts } from './vault'
 
 describe('encrypted digest history boundary', () => {
   it('keeps seven days, deduplicates automatic days and strips source body fields', () => {
@@ -17,5 +17,23 @@ describe('encrypted digest history boundary', () => {
     expect(history[0].content).toBe('新摘要')
     expect(history[0].sources[0]).not.toHaveProperty('text')
     expect(history[0].sources[0]).not.toHaveProperty('html')
+  })
+})
+
+describe('encrypted saved draft boundary', () => {
+  it('validates fields, deduplicates ids and keeps only the latest twenty drafts', () => {
+    const drafts = Array.from({ length: 22 }, (_, index) => ({
+      id: `draft-${index}`, updatedAt: new Date(Date.UTC(2026, 10, 1, 0, index)).toISOString(),
+      draft: { accountId: 'account', to: 'teacher@example.com', subject: `主题 ${index}`, text: `正文 ${index}` }
+    }))
+    const sanitized = currentSavedDrafts([
+      { ...drafts[21], draft: { ...drafts[21].draft, text: 'x'.repeat(1_000_001) } },
+      ...drafts,
+      { ...drafts[20], draft: { ...drafts[20].draft, text: '重复旧值' } }
+    ])
+    expect(sanitized).toHaveLength(20)
+    expect(sanitized[0].id).toBe('draft-21')
+    expect(new Set(sanitized.map((item) => item.id)).size).toBe(20)
+    expect(sanitized.at(-1)?.id).toBe('draft-2')
   })
 })

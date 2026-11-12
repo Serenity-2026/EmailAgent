@@ -310,7 +310,7 @@
 
 候选子模块：
 
-- [ ] `feature/saved-drafts`：加密保存有限数量的本地草稿；关闭窗口前提示未保存修改；发送成功后移除对应草稿。
+- [x] 已完成 `feature/saved-drafts`：用户 vault 加密保存最近 20 条本地草稿；撰写窗口与应用关闭前提示未保存修改；发送成功后移除对应草稿。
 - [ ] `feature/multiple-recipients`：把单字符串收件人升级为结构化 `to/cc/bcc`，逐地址校验；兼容已保存的 Agent 历史草稿。
 - [ ] `feature/safe-attachment-download`：按需下载附件，限制单个/总大小，净化文件名，由用户选择保存位置；附件默认不交给 AI。
 - [ ] `feature/redacted-diagnostics`：增加本地轮转诊断日志和“一键导出诊断信息”，自动排除授权码、API Key、会话令牌和邮件正文。
