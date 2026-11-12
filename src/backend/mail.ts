@@ -2,7 +2,7 @@ import { ImapFlow, type FetchMessageObject } from 'imapflow'
 import { simpleParser } from 'mailparser'
 import nodemailer from 'nodemailer'
 import type {
-  AgentAction, AgentMailRef, MailDetail, MailDraft, MailFolder, MailListOptions, MailPage,
+  AccountHealth, AgentAction, AgentMailRef, MailDetail, MailDraft, MailFolder, MailListOptions, MailPage,
   MailSearchQuery, MailSummary
 } from '../shared/models'
 import { PROVIDERS, validateRecipient } from './providers'
@@ -55,8 +55,11 @@ async function withImap<T>(account: StoredAccount, action: (client: ImapFlow) =>
   }
 }
 
-export async function testAccount(account: StoredAccount): Promise<void> {
+async function testImap(account: StoredAccount): Promise<void> {
   await withImap(account, async () => undefined)
+}
+
+async function testSmtp(account: StoredAccount): Promise<void> {
   const transport = nodemailer.createTransport({
     host: PROVIDERS[account.provider].smtp,
     port: 465,
@@ -69,6 +72,28 @@ export async function testAccount(account: StoredAccount): Promise<void> {
   } finally {
     transport.close()
   }
+}
+
+export async function inspectAccountHealth(account: StoredAccount): Promise<AccountHealth> {
+  const [imap, smtp] = await Promise.allSettled([testImap(account), testSmtp(account)])
+  return {
+    accountId: account.id,
+    imap: imap.status === 'fulfilled'
+      ? { ok: true, message: '收件连接正常' }
+      : { ok: false, message: '收件连接失败' },
+    smtp: smtp.status === 'fulfilled'
+      ? { ok: true, message: '发件连接正常' }
+      : { ok: false, message: '发件连接失败' },
+    checkedAt: new Date().toISOString()
+  }
+}
+
+export async function testAccount(account: StoredAccount): Promise<AccountHealth> {
+  const health = await inspectAccountHealth(account)
+  if (!health.imap.ok || !health.smtp.ok) {
+    throw new Error('连接失败，请检查 IMAP/SMTP 是否开启及授权码是否正确')
+  }
+  return health
 }
 
 function summaryOf(account: StoredAccount, folder: string, message: FetchMessageObject): MailSummary {

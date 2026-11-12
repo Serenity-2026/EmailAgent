@@ -33,6 +33,7 @@
 :root[data-theme='dark'] .agent-sources button, :root[data-theme='dark'] .source-row,
 :root[data-theme='dark'] .compose-preview { background: #24334d; border-color: #354866; color: #b3c9ff; }
 :root[data-theme='dark'] .overview-metrics div, :root[data-theme='dark'] .remote-images-note { background: #24334d; }
+:root[data-theme='dark'] .account-health-card { border-color: #354866; }
 :root[data-theme='dark'] .overview-people h3, :root[data-theme='dark'] .overview-chart h3,
 :root[data-theme='dark'] .overview-people p { color: #d9e2f2; }
 :root[data-theme='dark'] .overview-metrics strong { color: #a9c2ff; }

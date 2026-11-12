@@ -11,12 +11,12 @@ vi.mock('./ai', () => ({
 vi.mock('./mail-overview', () => ({ getMailOverview: vi.fn() }))
 vi.mock('./mail', () => ({
   executeAgentAction: vi.fn(), getMail: vi.fn(), getSentFolder: vi.fn(), listMail: vi.fn(),
-  listMailFolders: vi.fn(), sendMail: vi.fn(), testAccount: vi.fn(), todayMail: vi.fn()
+  inspectAccountHealth: vi.fn(), listMailFolders: vi.fn(), sendMail: vi.fn(), testAccount: vi.fn(), todayMail: vi.fn()
 }))
 
 import { runAgentTask } from './agent'
 import { generateDigest } from './ai'
-import { getMail, listMail, todayMail } from './mail'
+import { getMail, inspectAccountHealth, listMail, testAccount, todayMail } from './mail'
 import { BackendContext } from './service'
 
 const account: StoredAccount = {
@@ -32,26 +32,29 @@ const jobIds = [
 
 function contextWithHistory(history: AgentConversation[] = []): {
   context: BackendContext
-  state: { active: boolean; version: number; history: AgentConversation[]; digests: DigestHistoryItem[] }
+  state: { active: boolean; version: number; accounts: StoredAccount[]; history: AgentConversation[]; digests: DigestHistoryItem[] }
+  setAccounts: ReturnType<typeof vi.fn>
   setHistory: ReturnType<typeof vi.fn>
   setDigests: ReturnType<typeof vi.fn>
 } {
-  const state = { active: true, version: 0, history, digests: [] as DigestHistoryItem[] }
+  const state = { active: true, version: 0, accounts: [account], history, digests: [] as DigestHistoryItem[] }
+  const setAccounts = vi.fn(async (items: StoredAccount[]) => { state.accounts = items })
   const setHistory = vi.fn(async (items: AgentConversation[]) => { state.history = items })
   const setDigests = vi.fn(async (items: DigestHistoryItem[]) => { state.digests = items })
   const store = {
-    accounts: [account], ai: settings, themeMode: 'system',
+    ai: settings, themeMode: 'system',
     refresh: vi.fn(async () => undefined),
     logout: vi.fn(() => { state.active = false; state.version++ }),
-    setAgentConversations: setHistory, setDigestHistory: setDigests
+    setAccounts, setAgentConversations: setHistory, setDigestHistory: setDigests
   } as Record<string, unknown>
   Object.defineProperties(store, {
     activeUsername: { get: () => state.active ? 'dmc' : null },
     sessionVersion: { get: () => state.version },
+    accounts: { get: () => state.accounts },
     agentConversations: { get: () => state.history },
     digestHistory: { get: () => state.digests }
   })
-  return { context: new BackendContext(store as unknown as MysqlStore, 'token'), state, setHistory, setDigests }
+  return { context: new BackendContext(store as unknown as MysqlStore, 'token'), state, setAccounts, setHistory, setDigests }
 }
 
 function blockedAgent(stage: Omit<AgentProgress, 'jobId'>['stage']): Promise<void> {
@@ -158,5 +161,78 @@ describe('BackendContext digest history', () => {
     expect(second).toEqual(first)
     expect(generateDigest).toHaveBeenCalledTimes(1)
     expect(setDigests).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('BackendContext account maintenance', () => {
+  const health = {
+    accountId: account.id,
+    imap: { ok: true, message: '收件连接正常' },
+    smtp: { ok: true, message: '发件连接正常' },
+    checkedAt: '2026-11-12T04:00:00.000Z'
+  }
+
+  it('validates both connections before atomically replacing only the authorization code', async () => {
+    const { context, state, setAccounts } = contextWithHistory()
+    vi.mocked(testAccount).mockResolvedValue(health)
+    await expect(context.invoke('accounts:update-authorization', [account.id, ' new-secret '])).resolves.toEqual(health)
+    expect(testAccount).toHaveBeenCalledWith({ ...account, authorizationCode: 'new-secret' })
+    expect(setAccounts).toHaveBeenCalledTimes(1)
+    expect(state.accounts).toEqual([{ ...account, authorizationCode: 'new-secret' }])
+  })
+
+  it('keeps the old credential when validation fails', async () => {
+    const { context, state, setAccounts } = contextWithHistory()
+    vi.mocked(testAccount).mockRejectedValue(new Error('provider leaked detail'))
+    await expect(context.invoke('accounts:update-authorization', [account.id, 'bad-secret']))
+      .rejects.toThrow('旧授权码未被修改')
+    expect(setAccounts).not.toHaveBeenCalled()
+    expect(state.accounts[0].authorizationCode).toBe('secret')
+  })
+
+  it('does not restore an account deleted while credential validation is running', async () => {
+    const { context, state, setAccounts } = contextWithHistory()
+    let finish!: () => void
+    let started!: () => void
+    const ready = new Promise<void>((resolve) => { started = resolve })
+    vi.mocked(testAccount).mockImplementation(async () => {
+      started()
+      await new Promise<void>((resolve) => { finish = resolve })
+      return health
+    })
+    const updating = context.invoke('accounts:update-authorization', [account.id, 'new-secret'])
+    await ready
+    await context.invoke('accounts:remove', [account.id])
+    finish()
+    await expect(updating).rejects.toThrow('邮箱账户不存在')
+    expect(state.accounts).toEqual([])
+    expect(setAccounts).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects a credential write after the session changes', async () => {
+    const { context, setAccounts } = contextWithHistory()
+    let finish!: () => void
+    let started!: () => void
+    const ready = new Promise<void>((resolve) => { started = resolve })
+    vi.mocked(testAccount).mockImplementation(async () => {
+      started()
+      await new Promise<void>((resolve) => { finish = resolve })
+      return health
+    })
+    const updating = context.invoke('accounts:update-authorization', [account.id, 'new-secret'])
+    await ready
+    context.invalidate(false)
+    finish()
+    await expect(updating).rejects.toThrow('登录状态已变化')
+    expect(setAccounts).not.toHaveBeenCalled()
+  })
+
+  it('reports IMAP and SMTP independently without exposing a credential', async () => {
+    const { context } = contextWithHistory()
+    vi.mocked(inspectAccountHealth).mockResolvedValue({ ...health,
+      smtp: { ok: false, message: '发件连接失败' } })
+    const result = await context.invoke('accounts:health', [account.id])
+    expect(result).toMatchObject({ accountId: account.id, imap: { ok: true }, smtp: { ok: false } })
+    expect(JSON.stringify(result)).not.toContain(account.authorizationCode)
   })
 })

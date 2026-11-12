@@ -12,6 +12,18 @@ export interface Account {
   address: string
 }
 
+export interface AccountConnectionStatus {
+  ok: boolean
+  message: string
+}
+
+export interface AccountHealth {
+  accountId: string
+  imap: AccountConnectionStatus
+  smtp: AccountConnectionStatus
+  checkedAt: string
+}
+
 export interface MailSummary {
   uid: number
   accountId: string
@@ -199,6 +211,8 @@ export interface DesktopApi {
   listAccounts(): Promise<Account[]>
   addAccount(input: AccountInput): Promise<Account>
   removeAccount(id: string): Promise<void>
+  updateAccountAuthorizationCode(id: string, authorizationCode: string): Promise<AccountHealth>
+  checkAccountHealth(id: string): Promise<AccountHealth>
   listMailFolders(accountId: string): Promise<MailFolder[]>
   listMail(accountId: string, folder: string, options?: MailListOptions): Promise<MailPage>
   getMail(accountId: string, folder: string, uid: number, markRead?: boolean): Promise<MailDetail>

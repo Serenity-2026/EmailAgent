@@ -38,6 +38,9 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     sessionEpoch } = useSessionState()
   const { accounts, setAccounts, accountId, setAccountId, accountSettingsOpen, setAccountSettingsOpen,
     accountOpen, setAccountOpen, accountBusy, setAccountBusy, accountForm, setAccountForm,
+    accountHealth, setAccountHealth, accountHealthBusy, setAccountHealthBusy,
+    authorizationAccountId, setAuthorizationAccountId, authorizationOpen, setAuthorizationOpen,
+    authorizationCode, setAuthorizationCode, authorizationBusy, setAuthorizationBusy,
     userOpen, setUserOpen, newUserName, setNewUserName, newUserPassword, setNewUserPassword,
     confirmPassword, setConfirmPassword, userBusy, setUserBusy, passwordOpen, setPasswordOpen,
     currentPassword, setCurrentPassword, nextPassword, setNextPassword, confirmNextPassword, setConfirmNextPassword,
@@ -237,6 +240,12 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     setAccounts([])
     setAccountId('')
     setAccountBusy(false)
+    setAccountHealth({})
+    setAccountHealthBusy([])
+    setAuthorizationAccountId('')
+    setAuthorizationOpen(false)
+    setAuthorizationCode('')
+    setAuthorizationBusy(false)
     setMails([])
     setFolders([])
     setFolderAccountId('')
@@ -426,6 +435,54 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     }
   }
 
+  async function refreshAccountHealth(id: string): Promise<void> {
+    const epoch = sessionEpoch.current
+    setAccountHealthBusy((items) => items.includes(id) ? items : [...items, id])
+    setError('')
+    try {
+      const health = await api.checkAccountHealth(id)
+      if (epoch !== sessionEpoch.current) return
+      setAccountHealth((items) => ({ ...items, [id]: health }))
+    } catch (err) {
+      if (epoch === sessionEpoch.current) setError(errorText(err))
+    } finally {
+      if (epoch === sessionEpoch.current) setAccountHealthBusy((items) => items.filter((item) => item !== id))
+    }
+  }
+
+  function openAccountSettings(): void {
+    setError('')
+    setAccountSettingsOpen(true)
+    for (const account of accounts) void refreshAccountHealth(account.id)
+  }
+
+  function openAuthorizationUpdate(id: string): void {
+    setError('')
+    setAccountSettingsOpen(false)
+    setAuthorizationAccountId(id)
+    setAuthorizationCode('')
+    setAuthorizationOpen(true)
+  }
+
+  async function updateAuthorizationCode(): Promise<void> {
+    if (!authorizationAccountId || !authorizationCode.trim()) return
+    const epoch = sessionEpoch.current
+    setAuthorizationBusy(true)
+    setError('')
+    try {
+      const health = await api.updateAccountAuthorizationCode(authorizationAccountId, authorizationCode)
+      if (epoch !== sessionEpoch.current) return
+      setAccountHealth((items) => ({ ...items, [authorizationAccountId]: health }))
+      setAuthorizationCode('')
+      setAuthorizationOpen(false)
+      setAccountSettingsOpen(true)
+    } catch (err) {
+      if (epoch === sessionEpoch.current) setError(errorText(err))
+    } finally {
+      if (epoch === sessionEpoch.current) setAuthorizationBusy(false)
+    }
+  }
+
   async function removeAccount(): Promise<void> {
     if (!accountId) return
     const epoch = sessionEpoch.current
@@ -435,6 +492,11 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       if (epoch !== sessionEpoch.current) return
       const remaining = accounts.filter((account) => account.id !== accountId)
       delete mailNavigation.current[accountId]
+      setAccountHealth((items) => {
+        const next = { ...items }
+        delete next[accountId]
+        return next
+      })
       setAccounts(remaining)
       setAccountId(remaining[0]?.id || '')
       setMails([])
@@ -779,7 +841,7 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
         <button key={item.id} className={`nav-item ${view === 'mail' && item.path === folder ? 'active' : ''}`}
           onClick={() => selectMailFolder(item.path)}>{folderLabel(item)}{item.readOnly ? '（只读）' : ''}</button>)}
       <div className="sidebar-bottom">
-        <button className="account-trigger" onClick={() => setAccountSettingsOpen(true)}
+        <button className="account-trigger" onClick={openAccountSettings}
           aria-label={`${activeUser}，打开设置`}>
           <span className="account-avatar">{activeUser?.slice(0, 1).toUpperCase()}</span>
           <span>{activeUser}</span>
@@ -827,6 +889,9 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
 
     <SettingsDialogs error={error} themeMode={themeMode} accountSettingsOpen={accountSettingsOpen}
       accountOpen={accountOpen} accountBusy={accountBusy} accountForm={accountForm}
+      accounts={accounts} accountHealth={accountHealth} accountHealthBusy={accountHealthBusy}
+      authorizationOpen={authorizationOpen} authorizationAccount={accounts.find((item) => item.id === authorizationAccountId)}
+      authorizationCode={authorizationCode} authorizationBusy={authorizationBusy}
       userOpen={userOpen} userBusy={userBusy} newUserName={newUserName} newUserPassword={newUserPassword}
       confirmPassword={confirmPassword} passwordOpen={passwordOpen} passwordBusy={passwordBusy}
       currentPassword={currentPassword} nextPassword={nextPassword} confirmNextPassword={confirmNextPassword}
@@ -838,6 +903,9 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       onOpenUser={() => { setAccountSettingsOpen(false); setError(''); setUserOpen(true) }}
       onOpenPassword={() => { setAccountSettingsOpen(false); setError(''); setPasswordOpen(true) }}
       onRemoveAccount={removeAccount} onLogout={() => { setAccountSettingsOpen(false); void logout() }}
+      onCheckAccount={(id) => void refreshAccountHealth(id)} onOpenAuthorization={openAuthorizationUpdate}
+      onAuthorizationOpen={setAuthorizationOpen} onAuthorizationCode={setAuthorizationCode}
+      onUpdateAuthorization={() => void updateAuthorizationCode()}
       onAccountOpen={setAccountOpen} onAccountForm={setAccountForm} onAddAccount={() => void addAccount()}
       onUserOpen={setUserOpen} onNewUserName={setNewUserName} onNewUserPassword={setNewUserPassword}
       onConfirmPassword={setConfirmPassword} onCreateUser={() => void createUser()}

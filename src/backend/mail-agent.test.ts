@@ -3,7 +3,8 @@ import type { AgentAction, AgentMailRef } from '../shared/models'
 import type { StoredAccount } from '../shared/vault'
 
 const state = vi.hoisted(() => ({
-  uidValidity: 55n, archive: false, exists: true, calls: [] as string[], searchCount: 0, connectionError: false,
+  uidValidity: 55n, archive: false, exists: true, calls: [] as string[], searchCount: 0,
+  connectionError: false, smtpError: false,
   sourceSize: 100, missingSourceUids: new Set<number>(), missingMetadataUids: new Set<number>(),
   searchQueries: [] as Array<Record<string, unknown>>,
   folders: [] as Array<{ path: string; name: string; specialUse?: string; flags?: Set<string> }>
@@ -65,9 +66,17 @@ vi.mock('imapflow', () => ({
   }
 }))
 
+vi.mock('nodemailer', () => ({ default: { createTransport: () => ({
+  verify: async () => {
+    state.calls.push('smtp verify')
+    if (state.smtpError) throw new Error('SMTP secret provider detail')
+  },
+  close: () => state.calls.push('smtp close')
+}) } }))
+
 import {
-  executeAgentAction, getMail, listMail, listMailFolders, MAX_INTERACTIVE_MAIL_BYTES,
-  readAgentMailBatch, searchAgentMail, todayMail
+  executeAgentAction, getMail, inspectAccountHealth, listMail, listMailFolders, MAX_INTERACTIVE_MAIL_BYTES,
+  readAgentMailBatch, searchAgentMail, testAccount, todayMail
 } from './mail'
 
 const account: StoredAccount = { id: 'one', provider: 'qq', address: 'student@qq.com', authorizationCode: 'example' }
@@ -82,12 +91,33 @@ beforeEach(() => {
   state.exists = true
   state.searchCount = 0
   state.connectionError = false
+  state.smtpError = false
   state.sourceSize = 100
   state.missingSourceUids = new Set()
   state.missingMetadataUids = new Set()
   state.searchQueries = []
   state.folders = []
   state.calls = []
+})
+
+describe('account connectivity', () => {
+  it('reports incoming and outgoing connections independently without returning provider details', async () => {
+    state.connectionError = true
+    const incomingFailure = await inspectAccountHealth(account)
+    expect(incomingFailure).toMatchObject({
+      accountId: account.id,
+      imap: { ok: false, message: '收件连接失败' },
+      smtp: { ok: true, message: '发件连接正常' }
+    })
+    expect(JSON.stringify(incomingFailure)).not.toContain(account.authorizationCode)
+
+    state.connectionError = false
+    state.smtpError = true
+    const outgoingFailure = await inspectAccountHealth(account)
+    expect(outgoingFailure).toMatchObject({ imap: { ok: true }, smtp: { ok: false, message: '发件连接失败' } })
+    await expect(testAccount(account)).rejects.toThrow('连接失败')
+    expect(state.calls).toContain('smtp close')
+  })
 })
 
 describe('mailbox navigation', () => {

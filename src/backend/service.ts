@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type {
-  AccountInput, AgentCancelResult, AgentConfirmResult, AgentConversation, AgentMessage, AgentProgress,
+  AccountHealth, AccountInput, AgentCancelResult, AgentConfirmResult, AgentConversation, AgentMessage, AgentProgress,
   AiSettingsInput, DigestHistoryItem, MailDraft, MailListOptions, ThemeMode
 } from '../shared/models'
 import type { StoredAccount } from '../shared/vault'
@@ -8,7 +8,10 @@ import { generateDigest as summarize, generateDraft, listAiModels, resolveAiKey,
 import { runAgentTask } from './agent'
 import { AgentProposalRegistry, executeConfirmedActions } from './agent-proposals'
 import { getMailOverview } from './mail-overview'
-import { executeAgentAction, getMail, getSentFolder, listMail, listMailFolders, sendMail, testAccount, todayMail } from './mail'
+import {
+  executeAgentAction, getMail, getSentFolder, inspectAccountHealth, listMail, listMailFolders,
+  sendMail, testAccount, todayMail
+} from './mail'
 import { validateAccount } from './providers'
 import { MysqlStore } from './store'
 import { DailyDigestCoordinator } from './digest-scheduler'
@@ -173,6 +176,41 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
   handlers.set('accounts:remove', async (id: string) => {
     accountById(id)
     await store.setAccounts(store.accounts.filter((account) => account.id !== id))
+  })
+  handlers.set('accounts:update-authorization', async (id: string, authorizationCode: string) => {
+    const version = store.sessionVersion
+    const current = accountById(id)
+    const code = authorizationCode.trim()
+    if (!code) throw new Error('请输入新的邮箱客户端授权码')
+    const candidate: StoredAccount = { ...current, authorizationCode: code }
+    let health: AccountHealth
+    try {
+      health = await testAccount(candidate)
+    } catch {
+      throw new Error('连接失败，旧授权码未被修改')
+    }
+    requireSession(version)
+    await context.mutate(async () => {
+      requireSession(version)
+      const latest = accountById(id)
+      if (latest.provider !== current.provider || latest.address !== current.address) {
+        throw new Error('邮箱账户已变化，请重试')
+      }
+      await store.setAccounts(store.accounts.map((account) => account.id === id ? candidate : account))
+      requireSession(version)
+    })
+    return health
+  })
+  handlers.set('accounts:health', async (id: string) => {
+    const version = store.sessionVersion
+    const account = { ...accountById(id) }
+    const health = await inspectAccountHealth(account)
+    requireSession(version)
+    return context.mutate(async () => {
+      requireSession(version)
+      accountById(id)
+      return health
+    })
   })
   handlers.set('mail:folders', async (accountId: string) => {
     const version = store.sessionVersion

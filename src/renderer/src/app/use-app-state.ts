@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import type {
-  Account, AccountInput, AgentConversation, AgentProposal, AiSettingsInput, DigestHistoryItem,
+  Account, AccountHealth, AccountInput, AgentConversation, AgentProposal, AiSettingsInput, DigestHistoryItem,
   MailDetail, MailDraft, MailFolder, MailOverview, MailSearchQuery, MailSummary
 } from '../../../shared/models'
 
@@ -32,6 +32,12 @@ export function useAccountSettingsState() {
   const [accountOpen, setAccountOpen] = useState(false)
   const [accountBusy, setAccountBusy] = useState(false)
   const [accountForm, setAccountForm] = useState<AccountInput>({ provider: 'qq', address: '', authorizationCode: '' })
+  const [accountHealth, setAccountHealth] = useState<Record<string, AccountHealth>>({})
+  const [accountHealthBusy, setAccountHealthBusy] = useState<string[]>([])
+  const [authorizationAccountId, setAuthorizationAccountId] = useState('')
+  const [authorizationOpen, setAuthorizationOpen] = useState(false)
+  const [authorizationCode, setAuthorizationCode] = useState('')
+  const [authorizationBusy, setAuthorizationBusy] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
   const [newUserName, setNewUserName] = useState('')
   const [newUserPassword, setNewUserPassword] = useState('')
@@ -51,6 +57,9 @@ export function useAccountSettingsState() {
   const [settingsNotice, setSettingsNotice] = useState('')
   return { accounts, setAccounts, accountId, setAccountId, accountSettingsOpen, setAccountSettingsOpen,
     accountOpen, setAccountOpen, accountBusy, setAccountBusy, accountForm, setAccountForm,
+    accountHealth, setAccountHealth, accountHealthBusy, setAccountHealthBusy,
+    authorizationAccountId, setAuthorizationAccountId, authorizationOpen, setAuthorizationOpen,
+    authorizationCode, setAuthorizationCode, authorizationBusy, setAuthorizationBusy,
     userOpen, setUserOpen, newUserName, setNewUserName, newUserPassword, setNewUserPassword,
     confirmPassword, setConfirmPassword, userBusy, setUserBusy, passwordOpen, setPasswordOpen,
     currentPassword, setCurrentPassword, nextPassword, setNextPassword, confirmNextPassword, setConfirmNextPassword,

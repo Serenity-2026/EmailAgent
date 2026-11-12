@@ -19,11 +19,16 @@ vi.mock('electron', () => ({ safeStorage: {
   decryptString: (value: Buffer) => { if (encryption.fail) throw new Error('BAD_DECRYPT'); return value.toString() }
 } }))
 vi.mock('./mail', async (original) => ({ ...await original<typeof import('./mail')>(),
-  testAccount: vi.fn().mockResolvedValue(undefined), listMail: vi.fn().mockResolvedValue([]), sendMail: vi.fn().mockResolvedValue(undefined)
+  testAccount: vi.fn().mockImplementation(async (account: { id: string }) => ({ accountId: account.id,
+    imap: { ok: true, message: '收件连接正常' }, smtp: { ok: true, message: '发件连接正常' }, checkedAt: new Date().toISOString() })),
+  inspectAccountHealth: vi.fn().mockImplementation(async (account: { id: string }) => ({ accountId: account.id,
+    imap: { ok: true, message: '收件连接正常' }, smtp: { ok: true, message: '发件连接正常' }, checkedAt: new Date().toISOString() })),
+  listMail: vi.fn().mockResolvedValue([]), sendMail: vi.fn().mockResolvedValue(undefined)
 }))
 vi.mock('./ai', async (original) => ({ ...await original<typeof import('./ai')>(), testAiConnection: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('./agent', async (original) => ({ ...await original<typeof import('./agent')>(), runAgentTask: vi.fn() }))
 import { runAgentTask } from './agent'
+import { testAccount } from './mail'
 
 describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integration', () => {
   let root: Pool
@@ -155,6 +160,26 @@ describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integr
     expect((await rpc('agent:history', [], other)).result).toEqual([])
     expect((await rpc('theme:get', [], other)).result).toBe('system')
     expect((await rpc('accounts:remove', [added.result.id], other)).error).toContain('不存在')
+    store.logout()
+  })
+
+  it('rolls back a failed credential validation and never returns either credential', async () => {
+    const token = await login()
+    const added = await rpc('accounts:add', [account], token)
+    vi.mocked(testAccount).mockRejectedValueOnce(new Error(`provider detail ${account.authorizationCode}`))
+    const failed = await rpc('accounts:update-authorization', [added.result.id, 'bad-new-code'], token)
+    expect(failed.error).toBe('连接失败，旧授权码未被修改')
+    let store = await MysqlStore.login(db, 'dmc', '123456')
+    expect(store.accounts[0].authorizationCode).toBe(account.authorizationCode)
+    store.logout()
+
+    const updated = await rpc('accounts:update-authorization', [added.result.id, 'replacement-code'], token)
+    expect(updated.status).toBe(200)
+    expect(JSON.stringify(updated)).not.toContain('replacement-code')
+    expect(JSON.stringify(updated)).not.toContain(account.authorizationCode)
+    store = await MysqlStore.login(db, 'dmc', '123456')
+    expect(store.accounts[0]).toMatchObject({ id: added.result.id, provider: account.provider,
+      address: account.address, authorizationCode: 'replacement-code' })
     store.logout()
   })
 

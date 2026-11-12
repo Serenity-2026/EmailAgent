@@ -1,23 +1,30 @@
 import React from 'react'
 import { Alert, Button, Input, Modal, Select, Switch } from 'antd'
-import type { AccountInput, AiSettingsInput, Provider, ThemeMode } from '../../../../shared/models'
+import type { Account, AccountHealth, AccountInput, AiSettingsInput, Provider, ThemeMode } from '../../../../shared/models'
 
 export function SettingsDialogs({ error, themeMode, accountSettingsOpen, accountOpen, accountBusy, accountForm,
+  accounts, accountHealth, accountHealthBusy, authorizationOpen, authorizationAccount, authorizationCode, authorizationBusy,
   userOpen, userBusy, newUserName, newUserPassword, confirmPassword,
   passwordOpen, passwordBusy, currentPassword, nextPassword, confirmNextPassword,
   aiOpen, aiBusy, aiSettings, hasAiKey, models, modelsLoading, notice, hasAccount,
   onTheme, onAccountSettingsOpen, onOpenAi, onOpenAccount, onOpenUser, onOpenPassword, onRemoveAccount, onLogout,
+  onCheckAccount, onOpenAuthorization, onAuthorizationOpen, onAuthorizationCode, onUpdateAuthorization,
   onAccountOpen, onAccountForm, onAddAccount, onUserOpen, onNewUserName, onNewUserPassword, onConfirmPassword,
   onCreateUser, onPasswordOpen, onCurrentPassword, onNextPassword, onConfirmNextPassword, onChangePassword,
   onAiOpen, onAiSettings, onModels, onLoadModels, onSaveAi }: {
   error: string; themeMode: ThemeMode; accountSettingsOpen: boolean; accountOpen: boolean; accountBusy: boolean
-  accountForm: AccountInput; userOpen: boolean; userBusy: boolean; newUserName: string; newUserPassword: string
+  accountForm: AccountInput; accounts: Account[]; accountHealth: Record<string, AccountHealth>; accountHealthBusy: string[]
+  authorizationOpen: boolean; authorizationAccount?: Account; authorizationCode: string; authorizationBusy: boolean
+  userOpen: boolean; userBusy: boolean; newUserName: string; newUserPassword: string
   confirmPassword: string; passwordOpen: boolean; passwordBusy: boolean; currentPassword: string
   nextPassword: string; confirmNextPassword: string; aiOpen: boolean; aiBusy: boolean
   aiSettings: AiSettingsInput; hasAiKey: boolean; models: string[]; modelsLoading: boolean; notice: string
   hasAccount: boolean; onTheme: (mode: ThemeMode) => void; onAccountSettingsOpen: (open: boolean) => void
   onOpenAi: () => void; onOpenAccount: () => void; onOpenUser: () => void; onOpenPassword: () => void
   onRemoveAccount: () => Promise<void>; onLogout: () => void; onAccountOpen: (open: boolean) => void
+  onCheckAccount: (id: string) => void; onOpenAuthorization: (id: string) => void
+  onAuthorizationOpen: (open: boolean) => void; onAuthorizationCode: (value: string) => void
+  onUpdateAuthorization: () => void
   onAccountForm: (value: AccountInput) => void; onAddAccount: () => void; onUserOpen: (open: boolean) => void
   onNewUserName: (value: string) => void; onNewUserPassword: (value: string) => void
   onConfirmPassword: (value: string) => void; onCreateUser: () => void; onPasswordOpen: (open: boolean) => void
@@ -32,6 +39,25 @@ export function SettingsDialogs({ error, themeMode, accountSettingsOpen, account
         <div className="field"><label>主题</label><Select value={themeMode}
           options={[{ label: '跟随系统', value: 'system' }, { label: '亮色', value: 'light' }, { label: '暗色', value: 'dark' }]}
           onChange={onTheme} /></div>
+        <div className="account-health-list">
+          {accounts.length ? accounts.map((account) => {
+            const health = accountHealth[account.id]
+            return <div className="account-health-card" key={account.id}>
+              <div className="account-health-title"><strong>{account.address}</strong>
+                <span>{account.provider === 'qq' ? 'QQ 邮箱' : '163 邮箱'}</span></div>
+              <div className="account-health-status">
+                <span className={health?.imap.ok ? 'ok' : health ? 'failed' : ''}>IMAP：{health?.imap.message || '尚未检测'}</span>
+                <span className={health?.smtp.ok ? 'ok' : health ? 'failed' : ''}>SMTP：{health?.smtp.message || '尚未检测'}</span>
+                {health && <span>最近检查：{new Date(health.checkedAt).toLocaleString()}</span>}
+              </div>
+              <div className="account-health-actions">
+                <Button size="small" loading={accountHealthBusy.includes(account.id)} onClick={() => onCheckAccount(account.id)}>重新验证</Button>
+                <Button size="small" onClick={() => onOpenAuthorization(account.id)}>更新授权码</Button>
+              </div>
+            </div>
+          }) : <span className="field-help">尚未添加邮箱账户。</span>}
+          {accounts.length > 0 && <span className="field-help">邮箱地址和服务商不可修改；需要变更时请添加新账户。</span>}
+        </div>
         <Button onClick={onOpenAi}>AI 设置</Button>
         <Button onClick={onOpenAccount}>添加邮箱</Button>
         <Button onClick={onOpenUser}>添加用户</Button>
@@ -42,6 +68,19 @@ export function SettingsDialogs({ error, themeMode, accountSettingsOpen, account
         }) }}>移除当前邮箱</Button>
         <Button onClick={onLogout}>退出登录</Button>
       </div>
+    </Modal>
+
+    <Modal open={authorizationOpen} title="更新邮箱授权码" footer={null}
+      onCancel={() => { onAuthorizationOpen(false); onAuthorizationCode('') }} destroyOnHidden>
+      {error && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
+      <div className="field"><label>邮箱服务商</label><Input disabled
+        value={authorizationAccount?.provider === 'qq' ? 'QQ 邮箱' : authorizationAccount ? '163 邮箱' : ''} /></div>
+      <div className="field"><label>邮箱地址</label><Input disabled value={authorizationAccount?.address || ''} /></div>
+      <div className="field"><label>新的客户端授权码</label><Input.Password value={authorizationCode}
+        autoComplete="new-password" placeholder="不会显示或回填旧授权码" onChange={(event) => onAuthorizationCode(event.target.value)} />
+        <span className="field-help">保存前会重新验证 IMAP 和 SMTP；失败时继续使用旧授权码。</span></div>
+      <div className="modal-actions"><Button onClick={() => { onAuthorizationOpen(false); onAuthorizationCode('') }}>取消</Button>
+        <Button type="primary" loading={authorizationBusy} disabled={!authorizationCode.trim()} onClick={onUpdateAuthorization}>验证并更新</Button></div>
     </Modal>
 
     <Modal open={accountOpen} title="添加邮箱" footer={null} onCancel={() => onAccountOpen(false)} destroyOnHidden>

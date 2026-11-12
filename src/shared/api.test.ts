@@ -8,7 +8,8 @@ describe('RPC request validation', () => {
       'auth:session': [], 'auth:login': ['dmc', 'password'], 'auth:logout': [],
       'auth:create': ['student', 'password'], 'auth:password': ['old-password', 'new-password'],
       'accounts:list': [], 'accounts:add': [{ provider: 'qq', address: 'student@qq.com', authorizationCode: 'code' }],
-      'accounts:remove': ['account'], 'mail:folders': ['account'],
+      'accounts:remove': ['account'], 'accounts:update-authorization': ['account', 'new-code'], 'accounts:health': ['account'],
+      'mail:folders': ['account'],
       'mail:list': ['account', 'INBOX', { limit: 50, query: {} }], 'mail:get': ['account', 'INBOX', 1, false],
       'mail:sent-folder': ['account'], 'mail:send': [{ accountId: 'account', to: 'one@example.com', subject: '主题', text: '正文' }],
       'ai:settings:get': [], 'ai:models': ['https://example.com/v1', 'key'],
@@ -28,6 +29,7 @@ describe('RPC request validation', () => {
     expect(() => validateRpc('mail:get', ['account', 'INBOX', 0])).toThrow('请求参数无效')
     expect(() => validateRpc('mail:list', ['account', 'INBOX', { limit: 51 }])).toThrow('请求参数无效')
     expect(() => validateRpc('mail:list', ['account', 'INBOX', { query: { since: 'yesterday' } }])).toThrow('请求参数无效')
+    expect(() => validateRpc('accounts:update-authorization', ['account', 'x'.repeat(2001)])).toThrow('请求参数无效')
     expect(() => validateRpc('agent:run', ['x'.repeat(10_001)])).toThrow('请求参数无效')
     expect(() => validateRpc('agent:run', ['总结邮件', '', 'not-a-job-id'])).toThrow('请求参数无效')
     expect(() => validateRpc('ai:digest', [Array.from({ length: 101 }, () => 'account')])).toThrow('请求参数无效')

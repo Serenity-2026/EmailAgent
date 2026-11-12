@@ -29,6 +29,12 @@ function apiFor(session: string | null, bootstrapRequired = false, demoMode = fa
     login: vi.fn(async () => { username = 'dmc'; return { username } }), logout: vi.fn(async () => undefined),
     createUser: vi.fn(async () => undefined), changePassword: vi.fn(async () => undefined),
     listAccounts: vi.fn(async () => [account]), addAccount: vi.fn(), removeAccount: vi.fn(async () => undefined),
+    updateAccountAuthorizationCode: vi.fn(async (accountId) => ({ accountId,
+      imap: { ok: true, message: '收件连接正常' }, smtp: { ok: true, message: '发件连接正常' },
+      checkedAt: new Date().toISOString() })),
+    checkAccountHealth: vi.fn(async (accountId) => ({ accountId,
+      imap: { ok: true, message: '收件连接正常' }, smtp: { ok: true, message: '发件连接正常' },
+      checkedAt: new Date().toISOString() })),
     listMailFolders: vi.fn(async () => [{ id: 'inbox', path: 'INBOX', name: 'INBOX', specialUse: '\\Inbox', selectable: true, readOnly: false }]),
     listMail: vi.fn(async () => ({ messages: [mail], truncated: false, warnings: [] })),
     getMail: vi.fn(), openExternalLink: vi.fn(async () => undefined),
@@ -146,6 +152,37 @@ describe('renderer critical paths', () => {
     await act(async () => run?.click())
     await flush()
     expect(container.textContent).toContain('确认整理')
+  })
+
+  it('shows separate account health and updates a credential without echoing the saved value', async () => {
+    const api = apiFor('dmc')
+    api.checkAccountHealth = vi.fn(async (accountId) => ({ accountId,
+      imap: { ok: true, message: '收件连接正常' }, smtp: { ok: false, message: '发件连接失败' },
+      checkedAt: '2026-11-12T04:00:00.000Z' }))
+    window.emailAgent = api
+    const { EmailApp } = await import('./app/email-app')
+    const appRoot = createRoot(container)
+    root = appRoot
+    await act(async () => appRoot.render(<EmailApp themeMode="system" setThemeMode={() => undefined} dark={false} />))
+    await flush(); await flush()
+
+    await act(async () => (container.querySelector('.account-trigger') as HTMLButtonElement | null)?.click())
+    await flush()
+    expect(document.body.textContent).toContain('IMAP：收件连接正常')
+    expect(document.body.textContent).toContain('SMTP：发件连接失败')
+    expect(document.body.textContent).toContain('邮箱地址和服务商不可修改')
+
+    await act(async () => buttonNamed(document, '更新授权码')?.click())
+    const password = document.querySelector('.ant-modal input[type="password"]') as HTMLInputElement | null
+    expect(password?.value).toBe('')
+    expect(password?.placeholder).toContain('不会显示或回填旧授权码')
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(password, 'replacement-code'); password?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => buttonNamed(document, '验证并更新')?.click())
+    await flush()
+    expect(api.updateAccountAuthorizationCode).toHaveBeenCalledWith(account.id, 'replacement-code')
   })
 
   it('navigates real folders, loads older mail, remembers account search state and falls back safely', async () => {
