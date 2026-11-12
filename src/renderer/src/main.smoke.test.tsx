@@ -50,6 +50,7 @@ function apiFor(session: string | null, bootstrapRequired = false, demoMode = fa
     }),
     removeSavedDraft: vi.fn(async (id) => { savedDrafts = savedDrafts.filter((item) => item.id !== id) }),
     setComposeDirty: vi.fn(async () => undefined),
+    exportDiagnostics: vi.fn(async () => ({ saved: true, fileName: 'diagnostics.txt' })),
     getAiSettings: vi.fn(async () => ({ baseUrl: 'https://example.com/v1', model: 'model', dailyTime: '09:00', autoDaily: false, hasApiKey: true })),
     listAiModels: vi.fn(async () => ['model']), saveAiSettings: vi.fn(async () => undefined),
     testAiConnection: vi.fn(async () => undefined), generateDraft: vi.fn(), generateDigest: vi.fn(),
@@ -199,6 +200,10 @@ describe('renderer critical paths', () => {
     await act(async () => buttonNamed(document, '验证并更新')?.click())
     await flush()
     expect(api.updateAccountAuthorizationCode).toHaveBeenCalledWith(account.id, 'replacement-code')
+    await act(async () => buttonNamed(document, '导出诊断信息')?.click())
+    await flush()
+    expect(api.exportDiagnostics).toHaveBeenCalledTimes(1)
+    expect(document.body.textContent).toContain('诊断信息已导出')
   })
 
   it('saves a local draft, warns about later edits and removes the saved draft after sending', async () => {

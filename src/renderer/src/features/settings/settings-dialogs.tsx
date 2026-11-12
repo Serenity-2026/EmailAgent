@@ -7,7 +7,7 @@ export function SettingsDialogs({ error, themeMode, accountSettingsOpen, account
   userOpen, userBusy, newUserName, newUserPassword, confirmPassword,
   passwordOpen, passwordBusy, currentPassword, nextPassword, confirmNextPassword,
   aiOpen, aiBusy, aiSettings, hasAiKey, models, modelsLoading, notice, hasAccount,
-  onTheme, onAccountSettingsOpen, onOpenAi, onOpenAccount, onOpenUser, onOpenPassword, onRemoveAccount, onLogout,
+  onTheme, onAccountSettingsOpen, onOpenAi, onOpenAccount, onOpenUser, onOpenPassword, onRemoveAccount, onExportDiagnostics, onLogout,
   onCheckAccount, onOpenAuthorization, onAuthorizationOpen, onAuthorizationCode, onUpdateAuthorization,
   onAccountOpen, onAccountForm, onAddAccount, onUserOpen, onNewUserName, onNewUserPassword, onConfirmPassword,
   onCreateUser, onPasswordOpen, onCurrentPassword, onNextPassword, onConfirmNextPassword, onChangePassword,
@@ -21,7 +21,7 @@ export function SettingsDialogs({ error, themeMode, accountSettingsOpen, account
   aiSettings: AiSettingsInput; hasAiKey: boolean; models: string[]; modelsLoading: boolean; notice: string
   hasAccount: boolean; onTheme: (mode: ThemeMode) => void; onAccountSettingsOpen: (open: boolean) => void
   onOpenAi: () => void; onOpenAccount: () => void; onOpenUser: () => void; onOpenPassword: () => void
-  onRemoveAccount: () => Promise<void>; onLogout: () => void; onAccountOpen: (open: boolean) => void
+  onRemoveAccount: () => Promise<void>; onExportDiagnostics: () => void; onLogout: () => void; onAccountOpen: (open: boolean) => void
   onCheckAccount: (id: string) => void; onOpenAuthorization: (id: string) => void
   onAuthorizationOpen: (open: boolean) => void; onAuthorizationCode: (value: string) => void
   onUpdateAuthorization: () => void
@@ -62,6 +62,7 @@ export function SettingsDialogs({ error, themeMode, accountSettingsOpen, account
         <Button onClick={onOpenAccount}>添加邮箱</Button>
         <Button onClick={onOpenUser}>添加用户</Button>
         <Button onClick={onOpenPassword}>修改密码</Button>
+        <Button onClick={onExportDiagnostics}>导出诊断信息</Button>
         <Button danger disabled={!hasAccount} onClick={() => { onAccountSettingsOpen(false); Modal.confirm({
           title: '移除当前邮箱？', content: '只删除本机保存的账户和授权码，不会删除服务器上的邮件。',
           okText: '移除', cancelText: '取消', okButtonProps: { danger: true }, onOk: onRemoveAccount

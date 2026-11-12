@@ -96,6 +96,11 @@ export interface AttachmentSaveResult {
   fileName?: string
 }
 
+export interface DiagnosticExportResult {
+  saved: boolean
+  fileName?: string
+}
+
 export interface MailDraft {
   accountId: string
   to: string[]
@@ -254,6 +259,7 @@ export interface DesktopApi {
   saveDraft(id: string, draft: MailDraft): Promise<SavedDraft>
   removeSavedDraft(id: string): Promise<void>
   setComposeDirty(dirty: boolean): Promise<void>
+  exportDiagnostics(): Promise<DiagnosticExportResult>
   getAiSettings(): Promise<AiSettingsView>
   listAiModels(baseUrl: string, apiKey: string): Promise<string[]>
   saveAiSettings(input: AiSettingsInput): Promise<void>

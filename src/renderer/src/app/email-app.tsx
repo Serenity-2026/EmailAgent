@@ -500,6 +500,16 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     }
   }
 
+  async function exportDiagnostics(): Promise<void> {
+    setError('')
+    try {
+      const result = await api.exportDiagnostics()
+      if (result.saved) Modal.success({ title: '诊断信息已导出', content: result.fileName || '文件已保存到所选位置。' })
+    } catch (err) {
+      setError(errorText(err))
+    }
+  }
+
   async function removeAccount(): Promise<void> {
     if (!accountId) return
     const epoch = sessionEpoch.current
@@ -1028,7 +1038,8 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       onOpenAccount={() => { setAccountSettingsOpen(false); setError(''); setAccountOpen(true) }}
       onOpenUser={() => { setAccountSettingsOpen(false); setError(''); setUserOpen(true) }}
       onOpenPassword={() => { setAccountSettingsOpen(false); setError(''); setPasswordOpen(true) }}
-      onRemoveAccount={removeAccount} onLogout={() => { setAccountSettingsOpen(false); void logout() }}
+      onRemoveAccount={removeAccount} onExportDiagnostics={() => void exportDiagnostics()}
+      onLogout={() => { setAccountSettingsOpen(false); void logout() }}
       onCheckAccount={(id) => void refreshAccountHealth(id)} onOpenAuthorization={openAuthorizationUpdate}
       onAuthorizationOpen={setAuthorizationOpen} onAuthorizationCode={setAuthorizationCode}
       onUpdateAuthorization={() => void updateAuthorizationCode()}

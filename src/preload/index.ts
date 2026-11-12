@@ -35,6 +35,7 @@ const api: DesktopApi = {
   saveDraft: (id, draft) => invoke('drafts:save', id, draft),
   removeSavedDraft: (id) => invoke('drafts:remove', id),
   setComposeDirty: (dirty) => invoke('app:compose-dirty', dirty),
+  exportDiagnostics: () => invoke('diagnostics:export'),
   getAiSettings: () => invoke('ai:settings:get'),
   listAiModels: (baseUrl, apiKey) => invoke('ai:models', baseUrl, apiKey),
   saveAiSettings: (input) => invoke('ai:settings:save', input),
