@@ -12,7 +12,7 @@ describe('RPC request validation', () => {
       'mail:sent-folder': ['account'], 'mail:send': [{ accountId: 'account', to: 'one@example.com', subject: '主题', text: '正文' }],
       'ai:settings:get': [], 'ai:models': ['https://example.com/v1', 'key'],
       'ai:settings:save': [{ baseUrl: 'https://example.com/v1', model: 'model', apiKey: 'key', dailyTime: '09:00', autoDaily: false }],
-      'ai:settings:test': [], 'ai:draft': ['写一封邮件', 'account'], 'ai:digest': [['account']],
+      'ai:settings:test': [], 'ai:draft': ['写一封邮件', 'account'], 'ai:digest': [['account']], 'ai:digest:history': [],
       'agent:history': [], 'agent:overview': [],
       'agent:run': ['总结邮件', '', '123e4567-e89b-42d3-a456-426614174000'],
       'agent:cancel': ['123e4567-e89b-42d3-a456-426614174000'], 'agent:confirm': ['proposal'],

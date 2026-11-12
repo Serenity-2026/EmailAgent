@@ -1,7 +1,7 @@
 export const API_CHANNELS = [
   'auth:bootstrap-status', 'auth:bootstrap', 'auth:session', 'auth:login', 'auth:logout', 'auth:create', 'auth:password',
   'accounts:list', 'accounts:add', 'accounts:remove', 'mail:list', 'mail:get', 'mail:sent-folder', 'mail:send',
-  'ai:settings:get', 'ai:models', 'ai:settings:save', 'ai:settings:test', 'ai:draft', 'ai:digest',
+  'ai:settings:get', 'ai:models', 'ai:settings:save', 'ai:settings:test', 'ai:draft', 'ai:digest', 'ai:digest:history',
   'agent:history', 'agent:overview', 'agent:run', 'agent:cancel', 'agent:confirm', 'agent:clear', 'theme:get', 'theme:set'
 ] as const
 
@@ -12,6 +12,7 @@ export function validateRpc(channel: string, args: unknown[]): void {
   let valid = false
   switch (channel) {
     case 'auth:bootstrap-status': case 'auth:session': case 'auth:logout': case 'accounts:list': case 'ai:settings:get': case 'ai:settings:test':
+    case 'ai:digest:history':
     case 'agent:history': case 'agent:overview': case 'agent:clear': case 'theme:get': valid = args.length === 0; break
     case 'auth:bootstrap': case 'auth:login': case 'auth:create': case 'auth:password': case 'ai:models':
       valid = args.length === 2 && args.every((value) => string(value)); break

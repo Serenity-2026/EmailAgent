@@ -38,7 +38,8 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     mailLoading, setMailLoading, detailLoading, setDetailLoading, refreshTick, setRefreshTick,
     promptOpen, setPromptOpen, prompt, setPrompt, promptBusy, setPromptBusy, composeOpen, setComposeOpen,
     composePreview, setComposePreview, composeBusy, setComposeBusy, draft, setDraft, pendingSource } = useMailState()
-  const { digest, setDigest, digestLoading, setDigestLoading } = useDigestState()
+  const { digest, setDigest, digestHistory, setDigestHistory, digestError, setDigestError,
+    digestLoading, setDigestLoading } = useDigestState()
   const { agentConversations, setAgentConversations, agentConversationId, setAgentConversationId,
     agentPrompt, setAgentPrompt, agentBusy, setAgentBusy, agentJobId, setAgentJobId, agentJobIdRef,
     agentStatus, setAgentStatus,
@@ -52,13 +53,21 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     })
     const unsubscribe = api.onDailyDigest((result) => {
       setDigest(result)
+      setDigestHistory((current) => [result, ...current.filter((item) =>
+        item.date !== result.date || item.mode !== result.mode)])
+      setDigestError('')
       setView('digest')
+    })
+    const unsubscribeDigestFailure = api.onDailyDigestFailure((failure) => {
+      setDigestError(failure.nextRetryAt
+        ? `${failure.message}；将在 ${new Date(failure.nextRetryAt).toLocaleTimeString()} 后自动重试`
+        : `${failure.message}；今日自动重试次数已用完`)
     })
     const unsubscribeAgent = api.onAgentProgress((progress) => {
       if (!agentJobIdRef.current || progress.jobId === agentJobIdRef.current) setAgentStatus(progress.detail)
     })
     const unsubscribeError = api.onAppError((message) => setError(message))
-    return () => { unsubscribe(); unsubscribeAgent(); unsubscribeError() }
+    return () => { unsubscribe(); unsubscribeDigestFailure(); unsubscribeAgent(); unsubscribeError() }
   }, [api])
 
   useEffect(() => {
@@ -104,11 +113,15 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     const { username } = await api.getSession()
     setActiveUser(username)
     if (username) {
-      const [items, history, mode] = await Promise.all([api.listAccounts(), api.listAgentConversations(), api.getThemeMode()])
+      const [items, history, digests, mode] = await Promise.all([
+        api.listAccounts(), api.listAgentConversations(), api.listDigestHistory(), api.getThemeMode()
+      ])
       setAccounts(items)
       setAccountId(items[0]?.id || '')
       setAgentConversations(history)
       setAgentConversationId(history[0]?.id || '')
+      setDigestHistory(digests)
+      setDigest(digests[0] || null)
       setThemeMode(mode)
     }
     setConnectionStatus('ready')
@@ -168,6 +181,8 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     setMailLoading(false)
     setDetailLoading(false)
     setDigest(null)
+    setDigestHistory([])
+    setDigestError('')
     setDigestLoading(false)
     setAgentConversations([])
     setAgentConversationId('')
@@ -459,13 +474,18 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     if (!await ensureAiConfigured()) return
     if (epoch !== sessionEpoch.current) return
     setDigestLoading(true)
+    setDigestError('')
     setError('')
     setView('digest')
     try {
       const result = await api.generateDigest(accounts.map((account) => account.id))
-      if (epoch === sessionEpoch.current) setDigest(result)
+      if (epoch === sessionEpoch.current) {
+        setDigest(result)
+        setDigestHistory((current) => [result, ...current.filter((item) =>
+          item.date !== result.date || item.mode !== result.mode)])
+      }
     } catch (err) {
-      if (epoch === sessionEpoch.current) setError(errorText(err))
+      if (epoch === sessionEpoch.current) setDigestError(errorText(err))
     } finally {
       if (epoch === sessionEpoch.current) setDigestLoading(false)
     }
@@ -681,7 +701,9 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
         onOpenDraft={(nextDraft) => { setDraft(nextDraft); setComposePreview(false); setComposeOpen(true) }}
         onConfirm={confirmAgentActions} onPrompt={setAgentPrompt} onRun={() => void runAgent()}
         onCancel={() => void cancelAgent()} /> : view === 'digest' ?
-        <DigestView digest={digest} loading={digestLoading} onOpenSource={openDigestSource} /> :
+        <DigestView digest={digest} history={digestHistory} loading={digestLoading} error={digestError}
+          onSelect={(generatedAt) => setDigest(digestHistory.find((item) => item.generatedAt === generatedAt) || null)}
+          onRetry={() => void createDigest()} onOpenSource={openDigestSource} /> :
         <MailView accountId={accountId} mails={mails} selected={selected} detail={detail}
           mailLoading={mailLoading} detailLoading={detailLoading}
           onOpenMail={(mail) => void openMail(mail)} onOpenLink={openMailLink} onReply={() => newMessage(true)} />}

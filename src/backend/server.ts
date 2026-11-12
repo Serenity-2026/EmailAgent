@@ -10,7 +10,7 @@ class HttpError extends Error { constructor(readonly status: number, message: st
 export function createBackendServer(db: Database, options: { loginLimiter?: LoginAttemptLimiter } = {}): ReturnType<typeof createServer> {
   const contexts = new Map<string, BackendContext>()
   const loginLimiter = options.loginLimiter || new LoginAttemptLimiter()
-  async function authenticate(token: string): Promise<BackendContext> {
+  async function authenticate(token: string, timeZone?: string): Promise<BackendContext> {
     if (!/^[a-f0-9]{64}$/.test(token)) throw new HttpError(401, '请先登录')
     const session = await db.session(token)
     if (!session) {
@@ -18,8 +18,9 @@ export function createBackendServer(db: Database, options: { loginLimiter?: Logi
       throw new HttpError(401, '登录状态已失效，请重新登录')
     }
     const cached = contexts.get(token)
-    if (cached) { session.key.fill(0); cached.lastAccess = Date.now(); return cached }
+    if (cached) { session.key.fill(0); cached.lastAccess = Date.now(); cached.setTimeZone(timeZone); return cached }
     const context = new BackendContext(await MysqlStore.restore(db, session.username, session.key), token)
+    context.setTimeZone(timeZone)
     contexts.set(token, context)
     return context
   }
@@ -52,8 +53,10 @@ export function createBackendServer(db: Database, options: { loginLimiter?: Logi
         send(response, 200, { status: 'ok', database: 'mysql' }); return
       }
       const token = request.headers.authorization?.replace(/^Bearer /, '') || ''
+      const timeZoneHeader = request.headers['x-emailagent-timezone']
+      const timeZone = Array.isArray(timeZoneHeader) ? timeZoneHeader[0] : timeZoneHeader
       if (request.method === 'GET' && path === '/api/events') {
-        const context = await authenticate(token)
+        const context = await authenticate(token, timeZone)
         response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' })
         response.write(': connected\n\n')
         const listener = (channel: string, payload: unknown): void => { response.write(`data: ${JSON.stringify({ channel, payload })}\n\n`) }
@@ -73,7 +76,8 @@ export function createBackendServer(db: Database, options: { loginLimiter?: Logi
       if (channel === 'auth:bootstrap') {
         const store = await MysqlStore.bootstrap(db, args[0] as string, args[1] as string)
         const nextToken = await store.createSession()
-        contexts.set(nextToken, new BackendContext(store, nextToken))
+        const context = new BackendContext(store, nextToken); context.setTimeZone(timeZone)
+        contexts.set(nextToken, context)
         send(response, 200, { result: { username: store.username, token: nextToken } }); return
       }
       if (channel === 'auth:login') {
@@ -94,11 +98,12 @@ export function createBackendServer(db: Database, options: { loginLimiter?: Logi
           throw error
         }
         const nextToken = await store.createSession()
-        contexts.set(nextToken, new BackendContext(store, nextToken))
+        const context = new BackendContext(store, nextToken); context.setTimeZone(timeZone)
+        contexts.set(nextToken, context)
         send(response, 200, { result: { username: store.username, token: nextToken } }); return
       }
       if (channel === 'auth:session' && !token) { send(response, 200, { result: { username: null } }); return }
-      const context = await authenticate(token)
+      const context = await authenticate(token, timeZone)
       if (channel === 'auth:session') {
         send(response, 200, { result: { username: context.store.username } }); return
       }
@@ -135,13 +140,18 @@ export function createBackendServer(db: Database, options: { loginLimiter?: Logi
         session.key.fill(0)
         const settings = context.store.ai
         const now = new Date()
-        const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-        const clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-        if (!settings.autoDaily || !settings.apiKey || !context.store.accounts.length || clock < settings.dailyTime || context.dailyAttempt === date) return
-        context.dailyAttempt = date
-        const digest = await context.invoke('ai:digest', [context.store.accounts.map((account) => account.id)])
-        if (context.store.activeUsername) context.emit('ai:digest:ready', digest)
-      })().catch(() => context.emit('app:error', '每日摘要生成失败，可稍后手动重试'))
+        if (!settings.autoDaily || !settings.apiKey || !context.store.accounts.length) return
+        const claim = context.dailyDigest.claim(now, context.timeZone, settings.dailyTime, context.store.digestHistory)
+        if (!claim) return
+        try {
+          const digest = await context.invoke('ai:digest:auto', [context.store.accounts.map((account) => account.id)])
+          context.dailyDigest.succeed()
+          if (context.store.activeUsername) context.emit('ai:digest:ready', digest)
+        } catch {
+          const retry = context.dailyDigest.fail(new Date())
+          context.emit('ai:digest:failed', { message: '每日摘要生成失败，可立即手动重试', ...retry })
+        }
+      })().catch(() => undefined)
     }
   }, 60_000)
   server.on('close', () => { clearInterval(schedule); for (const context of contexts.values()) context.invalidate(false); contexts.clear() })

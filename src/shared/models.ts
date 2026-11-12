@@ -60,6 +60,17 @@ export interface DailyDigest {
   warnings: string[]
 }
 
+export interface DigestHistoryItem extends DailyDigest {
+  generatedAt: string
+  mode: 'manual' | 'auto'
+}
+
+export interface DigestFailure {
+  message: string
+  retriesRemaining: number
+  nextRetryAt?: string
+}
+
 export interface AgentMailRef extends MailSummary {
   accountAddress: string
   uidValidity: string
@@ -168,8 +179,10 @@ export interface DesktopApi {
   saveAiSettings(input: AiSettingsInput): Promise<void>
   testAiConnection(): Promise<void>
   generateDraft(instruction: string, accountId: string): Promise<MailDraft>
-  generateDigest(accountIds: string[]): Promise<DailyDigest>
-  onDailyDigest(listener: (digest: DailyDigest) => void): () => void
+  generateDigest(accountIds: string[]): Promise<DigestHistoryItem>
+  listDigestHistory(): Promise<DigestHistoryItem[]>
+  onDailyDigest(listener: (digest: DigestHistoryItem) => void): () => void
+  onDailyDigestFailure(listener: (failure: DigestFailure) => void): () => void
   listAgentConversations(): Promise<AgentConversation[]>
   runAgent(prompt: string, conversationId: string | undefined, jobId: string): Promise<AgentRunResult>
   cancelAgentJob(jobId: string): Promise<AgentCancelResult>

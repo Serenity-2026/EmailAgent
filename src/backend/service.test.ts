@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentConversation, AgentProgress } from '../shared/models'
+import type { AgentConversation, AgentProgress, DigestHistoryItem } from '../shared/models'
 import type { StoredAccount } from '../shared/vault'
 import type { MysqlStore } from './store'
 
@@ -15,7 +15,8 @@ vi.mock('./mail', () => ({
 }))
 
 import { runAgentTask } from './agent'
-import { getMail, listMail } from './mail'
+import { generateDigest } from './ai'
+import { getMail, listMail, todayMail } from './mail'
 import { BackendContext } from './service'
 
 const account: StoredAccount = {
@@ -31,23 +32,26 @@ const jobIds = [
 
 function contextWithHistory(history: AgentConversation[] = []): {
   context: BackendContext
-  state: { active: boolean; version: number; history: AgentConversation[] }
+  state: { active: boolean; version: number; history: AgentConversation[]; digests: DigestHistoryItem[] }
   setHistory: ReturnType<typeof vi.fn>
+  setDigests: ReturnType<typeof vi.fn>
 } {
-  const state = { active: true, version: 0, history }
+  const state = { active: true, version: 0, history, digests: [] as DigestHistoryItem[] }
   const setHistory = vi.fn(async (items: AgentConversation[]) => { state.history = items })
+  const setDigests = vi.fn(async (items: DigestHistoryItem[]) => { state.digests = items })
   const store = {
     accounts: [account], ai: settings, themeMode: 'system',
     refresh: vi.fn(async () => undefined),
     logout: vi.fn(() => { state.active = false; state.version++ }),
-    setAgentConversations: setHistory
+    setAgentConversations: setHistory, setDigestHistory: setDigests
   } as Record<string, unknown>
   Object.defineProperties(store, {
     activeUsername: { get: () => state.active ? 'dmc' : null },
     sessionVersion: { get: () => state.version },
-    agentConversations: { get: () => state.history }
+    agentConversations: { get: () => state.history },
+    digestHistory: { get: () => state.digests }
   })
-  return { context: new BackendContext(store as unknown as MysqlStore, 'token'), state, setHistory }
+  return { context: new BackendContext(store as unknown as MysqlStore, 'token'), state, setHistory, setDigests }
 }
 
 function blockedAgent(stage: Omit<AgentProgress, 'jobId'>['stage']): Promise<void> {
@@ -135,5 +139,24 @@ describe('BackendContext Agent concurrency', () => {
     await expect(running).rejects.toThrow('Agent 任务已取消')
     expect(events).toHaveLength(countBeforeLogout)
     expect(setHistory).not.toHaveBeenCalled()
+  })
+})
+
+describe('BackendContext digest history', () => {
+  it('persists a successful digest and reuses the same automatic result for the local day', async () => {
+    const { context, state, setDigests } = contextWithHistory()
+    context.setTimeZone('Asia/Shanghai')
+    vi.mocked(todayMail).mockResolvedValue({ messages: [], warnings: [] })
+    vi.mocked(generateDigest).mockImplementation(async (_settings, date) => ({
+      date, content: '今日摘要', sources: [], warnings: []
+    }))
+    const first = await context.invoke('ai:digest:auto', [[account.id]]) as DigestHistoryItem
+    expect(first).toMatchObject({ mode: 'auto', content: '今日摘要' })
+    expect(setDigests).toHaveBeenCalledTimes(1)
+    expect(state.digests).toEqual([first])
+    const second = await context.invoke('ai:digest:auto', [[account.id]])
+    expect(second).toEqual(first)
+    expect(generateDigest).toHaveBeenCalledTimes(1)
+    expect(setDigests).toHaveBeenCalledTimes(1)
   })
 })

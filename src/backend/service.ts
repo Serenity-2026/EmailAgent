@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type {
   AccountInput, AgentCancelResult, AgentConfirmResult, AgentConversation, AgentMessage, AgentProgress,
-  AiSettingsInput, DailyDigest, MailDraft, ThemeMode
+  AiSettingsInput, DigestHistoryItem, MailDraft, ThemeMode
 } from '../shared/models'
 import type { StoredAccount } from '../shared/vault'
 import { generateDigest as summarize, generateDraft, listAiModels, resolveAiKey, testAiConnection, validateAiSettings } from './ai'
@@ -11,6 +11,8 @@ import { getMailOverview } from './mail-overview'
 import { executeAgentAction, getMail, getSentFolder, listMail, sendMail, testAccount, todayMail } from './mail'
 import { validateAccount } from './providers'
 import { MysqlStore } from './store'
+import { DailyDigestCoordinator } from './digest-scheduler'
+import { isIanaTimeZone, startOfZonedDay, zonedClock } from './timezone'
 
 interface AgentJob {
   id: string
@@ -24,8 +26,9 @@ const SERIALIZED_CHANNELS = new Set([
 
 export class BackendContext {
   readonly proposals = new AgentProposalRegistry()
+  readonly dailyDigest = new DailyDigestCoordinator()
   readonly listeners = new Set<(channel: string, payload: unknown) => void>()
-  dailyAttempt = ''
+  timeZone = 'UTC'
   lastAccess = Date.now()
   private stateTail: Promise<unknown> = Promise.resolve()
   private agentJob: AgentJob | null = null
@@ -74,6 +77,9 @@ export class BackendContext {
     return { jobId, status: 'cancelling' }
   }
   cancelCurrentAgent(): void { this.agentJob?.controller.abort() }
+  setTimeZone(value: string | undefined): void {
+    if (value && isIanaTimeZone(value)) this.timeZone = value
+  }
   async invoke(channel: string, args: unknown[]): Promise<unknown> {
     this.lastAccess = Date.now()
     if (channel === 'agent:cancel') return this.cancelAgentJob(args[0] as string)
@@ -99,22 +105,18 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
     if (store.sessionVersion !== version || !store.activeUsername) throw new Error('登录状态已变化，请重试')
   }
 
-  function todayStart(): Date {
-    const now = new Date()
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  }
-
-  function localDate(): string {
-    const now = new Date()
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  }
-
-  async function digestFor(accountIds: string[]): Promise<DailyDigest> {
+  async function digestFor(accountIds: string[], mode: 'manual' | 'auto'): Promise<DigestHistoryItem> {
     const version = store.sessionVersion
     const settings = store.ai
+    const now = new Date()
+    const date = zonedClock(now, context.timeZone).date
+    if (mode === 'auto') {
+      const existing = store.digestHistory.find((item) => item.mode === 'auto' && item.date === date)
+      if (existing) return existing
+    }
     const selected = accountIds.map(accountById)
     if (selected.length === 0) throw new Error('请先添加邮箱账户')
-    const results = await Promise.allSettled(selected.map((account) => todayMail(account, todayStart())))
+    const results = await Promise.allSettled(selected.map((account) => todayMail(account, startOfZonedDay(now, context.timeZone))))
     const warnings: string[] = []
     const mail = results.flatMap((result, index) => {
       if (result.status === 'rejected') {
@@ -126,9 +128,16 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
     }).sort((a, b) => a.date.localeCompare(b.date))
     if (results.every((result) => result.status === 'rejected')) throw new Error('所有邮箱的今日邮件读取失败，请检查连接')
     requireSession(version)
-    const digest = await summarize(settings, localDate(), mail)
+    const digest = await summarize(settings, date, mail)
     requireSession(version)
-    return { ...digest, warnings }
+    const record: DigestHistoryItem = { ...digest, warnings, generatedAt: new Date().toISOString(), mode }
+    await context.mutate(async () => {
+      requireSession(version)
+      const key = `${date}\0${mode}`
+      await store.setDigestHistory([record, ...store.digestHistory.filter((item) => `${item.date}\0${item.mode}` !== key)])
+      requireSession(version)
+    })
+    return record
   }
 
   handlers.set('auth:create', (username: string, password: string) => store.addUser(username, password))
@@ -216,7 +225,9 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
     requireSession(version)
     return draft
   })
-  handlers.set('ai:digest', (accountIds: string[]) => digestFor(accountIds))
+  handlers.set('ai:digest', (accountIds: string[]) => digestFor(accountIds, 'manual'))
+  handlers.set('ai:digest:auto', (accountIds: string[]) => digestFor(accountIds, 'auto'))
+  handlers.set('ai:digest:history', () => store.digestHistory)
   handlers.set('agent:history', () => store.agentConversations)
   handlers.set('agent:overview', async () => {
     const version = store.sessionVersion

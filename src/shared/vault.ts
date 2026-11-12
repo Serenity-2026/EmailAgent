@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto'
-import type { Account, AgentConversation, AiSettingsInput, ThemeMode } from './models'
+import type { Account, AgentConversation, AiSettingsInput, DigestHistoryItem, MailSummary, ThemeMode } from './models'
 
 export interface StoredAccount extends Account {
   authorizationCode: string
@@ -8,6 +8,7 @@ export interface StoredAccount extends Account {
 export interface StoredData {
   accounts: StoredAccount[]
   ai: AiSettingsInput
+  digestHistory?: DigestHistoryItem[]
   agentConversations?: AgentConversation[]
   themeMode?: ThemeMode
 }
@@ -28,6 +29,7 @@ export interface VaultFile {
 export const emptyData = (): StoredData => ({
   accounts: [],
   ai: { baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false },
+  digestHistory: [],
   agentConversations: [],
   themeMode: 'system'
 })
@@ -43,6 +45,44 @@ export function currentConversations(items: unknown): AgentConversation[] {
       typeof message.createdAt === 'string' && Number.isFinite(Date.parse(message.createdAt)) &&
       Date.parse(message.createdAt) >= cutoff).slice(-40) }))
     .filter((item) => item.messages.length > 0)
+}
+
+function digestSource(value: unknown): MailSummary | null {
+  if (!value || typeof value !== 'object') return null
+  const source = value as Record<string, unknown>
+  if (!Number.isSafeInteger(source.uid) || Number(source.uid) <= 0 ||
+    !['accountId', 'folder', 'from', 'subject', 'date'].every((key) => typeof source[key] === 'string') ||
+    typeof source.unread !== 'boolean') return null
+  return {
+    uid: Number(source.uid), accountId: source.accountId as string, folder: source.folder as string,
+    from: source.from as string, subject: source.subject as string, date: source.date as string,
+    unread: source.unread
+  }
+}
+
+export function currentDigestHistory(items: unknown, now = Date.now()): DigestHistoryItem[] {
+  if (!Array.isArray(items)) return []
+  const cutoff = now - 7 * 24 * 60 * 60 * 1000
+  const unique = new Set<string>()
+  return (items as unknown[]).flatMap((value) => {
+    if (!value || typeof value !== 'object') return []
+    const item = value as Record<string, unknown>
+    const generated = typeof item.generatedAt === 'string' ? Date.parse(item.generatedAt) : NaN
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(item.date)) || !Number.isFinite(generated) || generated < cutoff || generated > now + 300_000 ||
+      (item.mode !== 'manual' && item.mode !== 'auto') || typeof item.content !== 'string' || !Array.isArray(item.sources) ||
+      !Array.isArray(item.warnings) || item.warnings.some((warning) => typeof warning !== 'string')) return []
+    const sources = item.sources.map(digestSource)
+    if (sources.some((source) => !source)) return []
+    return [{
+      date: item.date as string, generatedAt: item.generatedAt as string, mode: item.mode,
+      content: item.content, sources: sources as MailSummary[], warnings: item.warnings as string[]
+    } satisfies DigestHistoryItem]
+  }).sort((a, b) => b.generatedAt.localeCompare(a.generatedAt)).filter((item) => {
+    const key = `${item.date}\0${item.mode}`
+    if (unique.has(key)) return false
+    unique.add(key)
+    return true
+  }).slice(0, 14)
 }
 
 function isStoredData(value: unknown): value is StoredData {

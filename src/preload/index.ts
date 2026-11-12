@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DailyDigest, DesktopApi } from '../shared/models'
+import type { DigestFailure, DigestHistoryItem, DesktopApi } from '../shared/models'
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   try {
@@ -32,10 +32,16 @@ const api: DesktopApi = {
   testAiConnection: () => invoke('ai:settings:test'),
   generateDraft: (instruction, accountId) => invoke('ai:draft', instruction, accountId),
   generateDigest: (accountIds) => invoke('ai:digest', accountIds),
+  listDigestHistory: () => invoke('ai:digest:history'),
   onDailyDigest: (listener) => {
-    const handler = (_event: Electron.IpcRendererEvent, digest: DailyDigest): void => listener(digest)
+    const handler = (_event: Electron.IpcRendererEvent, digest: DigestHistoryItem): void => listener(digest)
     ipcRenderer.on('ai:digest:ready', handler)
     return () => ipcRenderer.removeListener('ai:digest:ready', handler)
+  },
+  onDailyDigestFailure: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, failure: DigestFailure): void => listener(failure)
+    ipcRenderer.on('ai:digest:failed', handler)
+    return () => ipcRenderer.removeListener('ai:digest:failed', handler)
   },
   listAgentConversations: () => invoke('agent:history'),
   runAgent: (prompt, conversationId, jobId) => invoke('agent:run', prompt, conversationId || '', jobId),

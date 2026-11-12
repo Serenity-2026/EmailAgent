@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import type {
-  Account, AccountInput, AgentConversation, AgentProposal, AiSettingsInput, DailyDigest,
+  Account, AccountInput, AgentConversation, AgentProposal, AiSettingsInput, DigestHistoryItem,
   MailDetail, MailDraft, MailOverview, MailSummary
 } from '../../../shared/models'
 
@@ -83,9 +83,12 @@ export function useMailState() {
 }
 
 export function useDigestState() {
-  const [digest, setDigest] = useState<DailyDigest | null>(null)
+  const [digest, setDigest] = useState<DigestHistoryItem | null>(null)
+  const [digestHistory, setDigestHistory] = useState<DigestHistoryItem[]>([])
+  const [digestError, setDigestError] = useState('')
   const [digestLoading, setDigestLoading] = useState(false)
-  return { digest, setDigest, digestLoading, setDigestLoading }
+  return { digest, setDigest, digestHistory, setDigestHistory, digestError, setDigestError,
+    digestLoading, setDigestLoading }
 }
 
 export function useAgentState() {

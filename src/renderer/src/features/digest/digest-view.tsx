@@ -1,13 +1,21 @@
 import React from 'react'
-import { Empty, Spin } from 'antd'
-import type { DailyDigest, MailSummary } from '../../../../shared/models'
+import { Alert, Button, Empty, Select, Spin } from 'antd'
+import type { DigestHistoryItem, MailSummary } from '../../../../shared/models'
 
-export function DigestView({ digest, loading, onOpenSource }: {
-  digest: DailyDigest | null; loading: boolean; onOpenSource: (source: MailSummary) => void
+export function DigestView({ digest, history, loading, error, onSelect, onRetry, onOpenSource }: {
+  digest: DigestHistoryItem | null; history: DigestHistoryItem[]; loading: boolean; error: string
+  onSelect: (generatedAt: string) => void; onRetry: () => void; onOpenSource: (source: MailSummary) => void
 }): React.JSX.Element {
   return <section className="digest-view"><div className="digest-card">
-    <h2>{digest?.date || '今日'}邮件摘要</h2>
+    <h2>{digest?.date || '今日'} 邮件摘要</h2>
+    {history.length > 0 && <Select value={digest?.generatedAt} onChange={onSelect} style={{ minWidth: 260, marginBottom: 16 }}
+      options={history.map((item) => ({ value: item.generatedAt,
+        label: `${item.date} · ${item.mode === 'auto' ? '自动' : '手动'} · ${new Date(item.generatedAt).toLocaleTimeString()}` }))} />}
+    {error && <Alert type="error" title={error} style={{ marginBottom: 16 }}
+      action={<Button size="small" onClick={onRetry}>立即重试</Button>} />}
     {loading ? <div className="top-spinner"><Spin /></div> : digest ? <>
+      <div className="digest-meta">最近成功：{new Date(digest.generatedAt).toLocaleString()} ·
+        {digest.mode === 'auto' ? ' 自动生成' : ' 手动生成'}</div>
       <div className="digest-body">{digest.content}</div>
       {digest.warnings.map((warning, index) => <div key={index} className="agent-warning">{warning}</div>)}
       {digest.sources.length > 0 && <>

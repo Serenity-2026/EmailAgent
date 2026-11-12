@@ -170,6 +170,24 @@ describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integr
     expect((await rpc('auth:session', [], token)).status).toBe(401)
   })
 
+  it('restores encrypted digest history after a backend restart', async () => {
+    const token = await login()
+    const store = await MysqlStore.login(db, 'dmc', '123456')
+    const generatedAt = new Date().toISOString()
+    await store.setDigestHistory([{
+      date: generatedAt.slice(0, 10), generatedAt, mode: 'auto', content: '持久化摘要', warnings: [], sources: [{
+        uid: 7, accountId: 'account', folder: 'INBOX', from: 'teacher@example.com', subject: '课程',
+        date: generatedAt, unread: true
+      }]
+    }])
+    store.logout()
+    expect((await rpc('ai:digest:history', [], token)).result[0].content).toBe('持久化摘要')
+    await closeServer(); await startServer()
+    const restored = await rpc('ai:digest:history', [], token)
+    expect(restored.result[0]).toMatchObject({ mode: 'auto', content: '持久化摘要' })
+    expect(restored.result[0].sources[0]).not.toHaveProperty('text')
+  })
+
   it('refreshes the current session key and revokes other sessions after a password change', async () => {
     const first = await login()
     const second = await login()
