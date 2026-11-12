@@ -133,13 +133,18 @@ describe('renderer critical paths', () => {
 
     const write = buttonNamed(container, '写邮件')
     await act(async () => write?.click())
-    const fields = Array.from(document.querySelectorAll('.ant-modal input')) as HTMLInputElement[]
+    const recipient = document.querySelector('.ant-modal input[placeholder="name@example.com"]') as HTMLInputElement | null
+    const subject = document.querySelector('.ant-modal input[placeholder="邮件主题"]') as HTMLInputElement | null
     const body = document.querySelector('.ant-modal textarea') as HTMLTextAreaElement | null
     await act(async () => {
-      for (const [field, value] of fields.map((field, index) => [field, index === 0 ? 'one@example.com' : '主题'] as const)) {
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
-        setter?.call(field, value); field.dispatchEvent(new Event('input', { bubbles: true }))
-      }
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(recipient, 'one@example.com'); recipient?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(subject, '主题'); subject?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
       setter?.call(body, '正文'); body?.dispatchEvent(new Event('input', { bubbles: true }))
     })
@@ -205,13 +210,17 @@ describe('renderer critical paths', () => {
     await act(async () => buttonNamed(container, '写邮件')?.click())
 
     const recipient = document.querySelector('.ant-modal input[placeholder="name@example.com"]') as HTMLInputElement
+    const cc = document.querySelector('.ant-modal input[placeholder="cc@example.com"]') as HTMLInputElement
+    const bcc = document.querySelector('.ant-modal input[placeholder="bcc@example.com"]') as HTMLInputElement
     const subject = document.querySelector('.ant-modal input[placeholder="邮件主题"]') as HTMLInputElement
     const body = document.querySelector('.ant-modal textarea') as HTMLTextAreaElement
     const setInput = async (field: HTMLInputElement, value: string): Promise<void> => act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(field, value)
       field.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    await setInput(recipient, 'teacher@example.com')
+    await setInput(recipient, 'teacher@example.com, reviewer@example.com')
+    await setInput(cc, 'assistant@example.com')
+    await setInput(bcc, 'hidden@example.com')
     await setInput(subject, '课程草稿')
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(body, '尚未发送的正文')
@@ -222,7 +231,10 @@ describe('renderer critical paths', () => {
 
     await act(async () => buttonNamed(document, '保存草稿')?.click())
     await flush()
-    expect(api.saveDraft).toHaveBeenCalledWith('', expect.objectContaining({ subject: '课程草稿', text: '尚未发送的正文' }))
+    expect(api.saveDraft).toHaveBeenCalledWith('', expect.objectContaining({
+      to: ['teacher@example.com', 'reviewer@example.com'], cc: ['assistant@example.com'], bcc: ['hidden@example.com'],
+      subject: '课程草稿', text: '尚未发送的正文'
+    }))
     expect(vi.mocked(api.setComposeDirty).mock.calls.at(-1)?.[0]).toBe(false)
 
     await setInput(subject, '课程草稿（修改）')

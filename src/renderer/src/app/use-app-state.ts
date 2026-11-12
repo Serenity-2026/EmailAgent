@@ -4,7 +4,7 @@ import type {
   MailDetail, MailDraft, MailFolder, MailOverview, MailSearchQuery, MailSummary, SavedDraft
 } from '../../../shared/models'
 
-const emptyDraft = (accountId: string): MailDraft => ({ accountId, to: '', subject: '', text: '' })
+const emptyDraft = (accountId: string): MailDraft => ({ accountId, to: [], cc: [], bcc: [], subject: '', text: '' })
 
 export function useSessionState() {
   const [error, setError] = useState('')

@@ -5,7 +5,7 @@ import type {
   AccountHealth, AgentAction, AgentMailRef, MailDetail, MailDraft, MailFolder, MailListOptions, MailPage,
   MailSearchQuery, MailSummary
 } from '../shared/models'
-import { PROVIDERS, validateRecipient } from './providers'
+import { PROVIDERS, validateRecipients } from './providers'
 import type { StoredAccount } from '../shared/vault'
 
 export const MAX_INTERACTIVE_MAIL_BYTES = 20_000_000
@@ -295,7 +295,7 @@ export async function getSentFolder(account: StoredAccount): Promise<string | nu
 }
 
 export async function sendMail(account: StoredAccount, draft: MailDraft): Promise<void> {
-  validateRecipient(draft.to)
+  const recipients = validateRecipients(draft)
   if (!draft.subject.trim()) throw new Error('请输入邮件主题')
   if (!draft.text.trim()) throw new Error('请输入邮件正文')
 
@@ -318,7 +318,9 @@ export async function sendMail(account: StoredAccount, draft: MailDraft): Promis
   try {
     await transport.sendMail({
       from: account.address,
-      to: draft.to.trim(),
+      to: recipients.to,
+      cc: recipients.cc,
+      bcc: recipients.bcc,
       subject: draft.subject.trim(),
       text: draft.text.trim(),
       inReplyTo,

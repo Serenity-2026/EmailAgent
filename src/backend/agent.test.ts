@@ -39,7 +39,9 @@ describe('Agent boundaries', () => {
       [mail(1)], '总结邮件')).toThrow('未经请求')
     const result = parseAgentAnswer('{"answer":"请回复[1]","citations":[1],"draft":{"sourceIndex":1,"subject":"Re: 报告","text":"收到。","to":"attacker@example.com"},"actions":[]}',
       [mail(1)], '给老师起草回复')
-    expect(result.draft?.to).toBe('teacher@example.com')
+    expect(result.draft?.to).toEqual(['teacher@example.com'])
+    expect(result.draft?.cc).toEqual([])
+    expect(result.draft?.bcc).toEqual([])
     expect(result.draft?.replyTo?.uidValidity).toBe('11')
   })
 

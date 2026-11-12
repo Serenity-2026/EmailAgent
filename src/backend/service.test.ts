@@ -251,7 +251,8 @@ describe('BackendContext saved drafts', () => {
     const { context, state } = contextWithHistory()
     for (let index = 0; index < 21; index++) {
       await context.invoke('drafts:save', ['', {
-        accountId: account.id, to: 'teacher@example.com', subject: `草稿 ${index}`, text: `正文 ${index}`
+        accountId: account.id, to: ['teacher@example.com'], cc: [], bcc: [],
+        subject: `草稿 ${index}`, text: `正文 ${index}`
       }])
     }
     expect(state.drafts).toHaveLength(20)
@@ -265,7 +266,7 @@ describe('BackendContext saved drafts', () => {
   it('refuses to save a draft for an account that no longer exists', async () => {
     const { context } = contextWithHistory()
     await expect(context.invoke('drafts:save', ['', {
-      accountId: 'missing', to: '', subject: '孤立草稿', text: ''
+      accountId: 'missing', to: [], cc: [], bcc: [], subject: '孤立草稿', text: ''
     }])).rejects.toThrow('邮箱账户不存在')
   })
 })

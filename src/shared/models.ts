@@ -77,7 +77,9 @@ export interface MailDetail extends MailSummary {
 
 export interface MailDraft {
   accountId: string
-  to: string
+  to: string[]
+  cc: string[]
+  bcc: string[]
   subject: string
   text: string
   replyTo?: { uid: number; folder: string; uidValidity?: string }

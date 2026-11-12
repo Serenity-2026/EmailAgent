@@ -45,7 +45,10 @@ export function currentConversations(items: unknown): AgentConversation[] {
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 30)
     .map((item) => ({ ...item, messages: item.messages.filter((message) =>
       typeof message.createdAt === 'string' && Number.isFinite(Date.parse(message.createdAt)) &&
-      Date.parse(message.createdAt) >= cutoff).slice(-40) }))
+      Date.parse(message.createdAt) >= cutoff).slice(-40).map((message) => {
+        const draft = normalizeMailDraft((message as unknown as { draft?: unknown }).draft)
+        return { ...message, draft: draft || undefined }
+      }) }))
     .filter((item) => item.messages.length > 0)
 }
 
@@ -87,12 +90,28 @@ export function currentDigestHistory(items: unknown, now = Date.now()): DigestHi
   }).slice(0, 14)
 }
 
-function savedMailDraft(value: unknown): MailDraft | null {
+function recipientList(value: unknown): string[] | null {
+  const entries = typeof value === 'string' ? (value.trim() ? [value] : []) : value
+  if (!Array.isArray(entries) || entries.length > 50 || entries.some((item) => typeof item !== 'string' || item.length > 320)) return null
+  return entries.map((item) => item.trim()).filter(Boolean)
+}
+
+export function normalizeMailDraft(value: unknown): MailDraft | null {
   if (!value || typeof value !== 'object') return null
   const draft = value as Record<string, unknown>
-  if (typeof draft.accountId !== 'string' || typeof draft.to !== 'string' || draft.to.length > 2000 ||
+  const to = recipientList(draft.to)
+  const cc = draft.cc === undefined ? [] : recipientList(draft.cc)
+  const bcc = draft.bcc === undefined ? [] : recipientList(draft.bcc)
+  if (typeof draft.accountId !== 'string' || !to || !cc || !bcc || to.length + cc.length + bcc.length > 50 ||
     typeof draft.subject !== 'string' || draft.subject.length > 2000 ||
     typeof draft.text !== 'string' || draft.text.length > 1_000_000) return null
+  const seen = new Set<string>()
+  const unique = (items: string[]): string[] => items.filter((item) => {
+    const key = item.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
   let replyTo: MailDraft['replyTo']
   if (draft.replyTo !== undefined) {
     if (!draft.replyTo || typeof draft.replyTo !== 'object') return null
@@ -101,7 +120,8 @@ function savedMailDraft(value: unknown): MailDraft | null {
       (reply.uidValidity !== undefined && typeof reply.uidValidity !== 'string')) return null
     replyTo = { uid: Number(reply.uid), folder: reply.folder, ...(reply.uidValidity === undefined ? {} : { uidValidity: reply.uidValidity as string }) }
   }
-  return { accountId: draft.accountId, to: draft.to, subject: draft.subject, text: draft.text, ...(replyTo ? { replyTo } : {}) }
+  return { accountId: draft.accountId, to: unique(to), cc: unique(cc), bcc: unique(bcc),
+    subject: draft.subject, text: draft.text, ...(replyTo ? { replyTo } : {}) }
 }
 
 export function currentSavedDrafts(items: unknown): SavedDraft[] {
@@ -111,7 +131,7 @@ export function currentSavedDrafts(items: unknown): SavedDraft[] {
     if (!value || typeof value !== 'object') return []
     const item = value as Record<string, unknown>
     const timestamp = typeof item.updatedAt === 'string' ? Date.parse(item.updatedAt) : NaN
-    const draft = savedMailDraft(item.draft)
+    const draft = normalizeMailDraft(item.draft)
     if (typeof item.id !== 'string' || !item.id || item.id.length > 100 || !Number.isFinite(timestamp) || !draft) return []
     return [{ id: item.id, updatedAt: item.updatedAt as string, draft } satisfies SavedDraft]
   }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).filter((item) => {

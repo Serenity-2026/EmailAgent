@@ -3,7 +3,7 @@ import type {
   AccountHealth, AccountInput, AgentCancelResult, AgentConfirmResult, AgentConversation, AgentMessage, AgentProgress,
   AiSettingsInput, DigestHistoryItem, MailDraft, MailListOptions, ThemeMode
 } from '../shared/models'
-import type { StoredAccount } from '../shared/vault'
+import { normalizeMailDraft, type StoredAccount } from '../shared/vault'
 import { generateDigest as summarize, generateDraft, listAiModels, resolveAiKey, testAiConnection, validateAiSettings } from './ai'
 import { runAgentTask } from './agent'
 import { AgentProposalRegistry, executeConfirmedActions } from './agent-proposals'
@@ -243,11 +243,13 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
   handlers.set('mail:send', (draft: MailDraft) => sendMail(accountById(draft.accountId), draft))
   handlers.set('drafts:list', () => store.savedDrafts)
   handlers.set('drafts:save', async (id: string, draft: MailDraft) => {
-    accountById(draft.accountId)
+    const normalized = normalizeMailDraft(draft)
+    if (!normalized) throw new Error('草稿格式无效')
+    accountById(normalized.accountId)
     const record = {
       id: id.trim() || randomUUID(),
       updatedAt: new Date().toISOString(),
-      draft: { ...draft, accountId: draft.accountId, to: draft.to, subject: draft.subject, text: draft.text }
+      draft: normalized
     }
     await store.setSavedDrafts([record, ...store.savedDrafts.filter((item) => item.id !== record.id)])
     return record

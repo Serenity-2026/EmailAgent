@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { currentDigestHistory, currentSavedDrafts } from './vault'
+import { currentConversations, currentDigestHistory, currentSavedDrafts } from './vault'
 
 describe('encrypted digest history boundary', () => {
   it('keeps seven days, deduplicates automatic days and strips source body fields', () => {
@@ -35,5 +35,17 @@ describe('encrypted saved draft boundary', () => {
     expect(sanitized[0].id).toBe('draft-21')
     expect(new Set(sanitized.map((item) => item.id)).size).toBe(20)
     expect(sanitized.at(-1)?.id).toBe('draft-2')
+  })
+
+  it('migrates legacy string recipients in local and Agent history drafts', () => {
+    const updatedAt = new Date().toISOString()
+    const legacyDraft = { accountId: 'account', to: 'teacher@example.com', subject: '旧草稿', text: '正文' }
+    const local = currentSavedDrafts([{ id: 'legacy', updatedAt, draft: legacyDraft }])
+    expect(local[0].draft).toMatchObject({ to: ['teacher@example.com'], cc: [], bcc: [] })
+
+    const conversations = currentConversations([{ id: 'conversation', updatedAt, messages: [{
+      id: 'message', role: 'assistant', content: '旧回复', createdAt: updatedAt, draft: legacyDraft
+    }] }])
+    expect(conversations[0].messages[0].draft).toMatchObject({ to: ['teacher@example.com'], cc: [], bcc: [] })
   })
 })

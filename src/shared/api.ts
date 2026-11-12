@@ -11,6 +11,7 @@ export function validateRpc(channel: string, args: unknown[]): void {
   const string = (value: unknown, max = 2000): boolean => typeof value === 'string' && value.length <= max
   const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
   const uid = (value: unknown): boolean => Number.isSafeInteger(value) && Number(value) > 0
+  const addresses = (value: unknown): boolean => Array.isArray(value) && value.length <= 50 && value.every((item) => string(item, 320))
   let valid = false
   switch (channel) {
     case 'auth:bootstrap-status': case 'auth:session': case 'auth:logout': case 'accounts:list': case 'ai:settings:get': case 'ai:settings:test':
@@ -60,7 +61,10 @@ export function validateRpc(channel: string, args: unknown[]): void {
       const input = args[channel === 'drafts:save' ? 1 : 0]
       valid = args.length === (channel === 'drafts:save' ? 2 : 1) &&
         (channel !== 'drafts:save' || string(args[0], 100)) && object(input) &&
-        ['accountId', 'to', 'subject'].every((key) => string(input[key])) && string(input.text, 1_000_000) &&
+        ['accountId', 'subject'].every((key) => string(input[key])) &&
+        addresses(input.to) && addresses(input.cc) && addresses(input.bcc) &&
+        (input.to as unknown[]).length + (input.cc as unknown[]).length + (input.bcc as unknown[]).length <= 50 &&
+        string(input.text, 1_000_000) &&
         (input.replyTo === undefined || (object(input.replyTo) && uid(input.replyTo.uid) && string(input.replyTo.folder) &&
           (input.replyTo.uidValidity === undefined || string(input.replyTo.uidValidity))))
       break

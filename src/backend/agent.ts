@@ -105,7 +105,7 @@ export function parseAgentAnswer(raw: string, refs: AgentMailRef[], prompt: stri
     const to = source.from.match(/<([^>]+)>/)?.[1] || source.from
     validateRecipient(to)
     draft = {
-      accountId: source.accountId, to, subject: item.subject.trim().slice(0, 200),
+      accountId: source.accountId, to: [to], cc: [], bcc: [], subject: item.subject.trim().slice(0, 200),
       text: item.text.trim().slice(0, 20_000), replyTo: {
         uid: source.uid, folder: source.folder, uidValidity: source.uidValidity
       }

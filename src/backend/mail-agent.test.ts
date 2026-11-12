@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   uidValidity: 55n, archive: false, exists: true, calls: [] as string[], searchCount: 0,
   connectionError: false, smtpError: false,
   sourceSize: 100, missingSourceUids: new Set<number>(), missingMetadataUids: new Set<number>(),
+  sentMessages: [] as Array<Record<string, unknown>>,
   searchQueries: [] as Array<Record<string, unknown>>,
   folders: [] as Array<{ path: string; name: string; specialUse?: string; flags?: Set<string> }>
 }))
@@ -71,12 +72,13 @@ vi.mock('nodemailer', () => ({ default: { createTransport: () => ({
     state.calls.push('smtp verify')
     if (state.smtpError) throw new Error('SMTP secret provider detail')
   },
+  sendMail: async (message: Record<string, unknown>) => { state.sentMessages.push(message) },
   close: () => state.calls.push('smtp close')
 }) } }))
 
 import {
   executeAgentAction, getMail, inspectAccountHealth, listMail, listMailFolders, MAX_INTERACTIVE_MAIL_BYTES,
-  readAgentMailBatch, searchAgentMail, testAccount, todayMail
+  readAgentMailBatch, searchAgentMail, sendMail, testAccount, todayMail
 } from './mail'
 
 const account: StoredAccount = { id: 'one', provider: 'qq', address: 'student@qq.com', authorizationCode: 'example' }
@@ -97,6 +99,7 @@ beforeEach(() => {
   state.missingMetadataUids = new Set()
   state.searchQueries = []
   state.folders = []
+  state.sentMessages = []
   state.calls = []
 })
 
@@ -117,6 +120,22 @@ describe('account connectivity', () => {
     expect(outgoingFailure).toMatchObject({ imap: { ok: true }, smtp: { ok: false, message: '发件连接失败' } })
     await expect(testAccount(account)).rejects.toThrow('连接失败')
     expect(state.calls).toContain('smtp close')
+  })
+})
+
+describe('mail sending recipients', () => {
+  it('validates each address and sends deduplicated to/cc/bcc arrays', async () => {
+    await sendMail(account, {
+      accountId: account.id, to: ['one@example.com', 'ONE@example.com'], cc: ['two@example.com'],
+      bcc: ['hidden@example.com'], subject: '通知', text: '正文'
+    })
+    expect(state.sentMessages[0]).toMatchObject({
+      to: ['one@example.com'], cc: ['two@example.com'], bcc: ['hidden@example.com']
+    })
+    await expect(sendMail(account, {
+      accountId: account.id, to: ['one@example.com'], cc: ['张三'], bcc: [], subject: '通知', text: '正文'
+    })).rejects.toThrow('有效的收件人')
+    expect(state.sentMessages).toHaveLength(1)
   })
 })
 

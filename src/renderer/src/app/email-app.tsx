@@ -19,7 +19,7 @@ declare global {
 const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error)
 const draftKey = (draft: ReturnType<typeof emptyDraft>): string => JSON.stringify(draft)
 const hasDraftContent = (draft: ReturnType<typeof emptyDraft>): boolean =>
-  Boolean(draft.to.trim() || draft.subject.trim() || draft.text.trim())
+  Boolean(draft.to.length || draft.cc.length || draft.bcc.length || draft.subject.trim() || draft.text.trim())
 const folderLabel = (folder: MailFolder): string => {
   const role = folder.specialUse?.toLowerCase()
   if (role === '\\inbox' || folder.path.toUpperCase() === 'INBOX') return '收件箱'
@@ -606,7 +606,7 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     const recipient = reply && detail ? (detail.from.match(/<([^>]+)>/)?.[1] || detail.from) : ''
     setDraft({
       ...emptyDraft(accountId),
-      to: recipient,
+      to: recipient ? [recipient] : [],
       subject: reply && detail ? (detail.subject.startsWith('Re:') ? detail.subject : `Re: ${detail.subject}`) : '',
       replyTo: reply && detail ? { uid: detail.uid, folder: detail.folder, uidValidity: detail.uidValidity } : undefined
     })
@@ -621,7 +621,7 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       const recipient = url.slice(7).split('?')[0]
       try {
         newMessage()
-        setDraft({ ...emptyDraft(accountId), to: decodeURIComponent(recipient) })
+        setDraft({ ...emptyDraft(accountId), to: [decodeURIComponent(recipient)] })
       } catch {
         setError('邮件地址无效')
       }

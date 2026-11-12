@@ -187,7 +187,8 @@ describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integr
     const token = await login()
     const added = await rpc('accounts:add', [account], token)
     const saved = await rpc('drafts:save', ['', {
-      accountId: added.result.id, to: 'teacher@example.com', subject: '课程草稿', text: '私密草稿正文'
+      accountId: added.result.id, to: ['teacher@example.com'], cc: ['assistant@example.com'], bcc: [],
+      subject: '课程草稿', text: '私密草稿正文'
     }], token)
     expect(saved.status).toBe(200)
     const [rows] = await db.pool.query('SELECT vault FROM users WHERE username = "dmc"')
