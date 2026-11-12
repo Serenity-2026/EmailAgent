@@ -202,3 +202,11 @@ npm run backend:start
 - 本地服务启动器按平台构造命令搜索路径；Windows 可从标准位置发现 Docker CLI，并在引擎未运行时隐藏启动 Docker Desktop。
 - GitHub Actions 分别在 macOS 与 Windows runner 执行目录打包和启动冒烟验证，阻止缺文件或启动即崩溃的交付物进入主分支。
 - 新增[平台打包与运行前置条件](doc/platform-packaging.md)，分别记录 macOS 钥匙串、Windows DPAPI、Linux Secret Service，以及各平台 Docker/Compose 要求和验收边界。
+
+### 0.1.14 - 首轮模块化路线图完成验收（2026-11-12）
+
+- 根目录 TODO 中 Q0、R1、M1、S1、A1、D1、B1、C1 与 O1 的任务和验收项已全部完成并保留逐项记录。
+- 13 个功能与工程模块分别保留独立提交，已按实施顺序快进合并到本地 `main`，便于协作者按模块审阅或回滚。
+- 最终回归通过 TypeScript 类型检查、98 项普通自动化测试和生产构建；Windows x64 目录包已实际生成，并通过打包后主进程、preload 与 Renderer 启动验证。
+- MySQL 8.4 隔离集成测试由 CI 的独立质量任务执行；真实 QQ/163 邮箱与个人授权码仍只允许在用户本机验收，不写入仓库或自动化日志。
+- 已清理所有合并到本地 `main` 的本轮本地主题分支；未执行远端推送或删除，避免在没有明确发布授权时改变远端主分支和未合并引用。
