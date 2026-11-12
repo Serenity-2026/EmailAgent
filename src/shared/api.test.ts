@@ -11,6 +11,7 @@ describe('RPC request validation', () => {
       'accounts:remove': ['account'], 'accounts:update-authorization': ['account', 'new-code'], 'accounts:health': ['account'],
       'mail:folders': ['account'],
       'mail:list': ['account', 'INBOX', { limit: 50, query: {} }], 'mail:get': ['account', 'INBOX', 1, false],
+      'mail:attachment': ['account', 'INBOX', 1, '55', 'attachment-1'],
       'mail:sent-folder': ['account'], 'mail:send': [{ accountId: 'account', to: ['one@example.com'], cc: [], bcc: [], subject: '主题', text: '正文' }],
       'drafts:list': [], 'drafts:save': ['', { accountId: 'account', to: [], cc: [], bcc: [], subject: '草稿', text: '正文' }],
       'drafts:remove': ['draft'],
@@ -29,6 +30,7 @@ describe('RPC request validation', () => {
   it('rejects extra arguments, invalid UIDs and oversized bounded inputs', () => {
     expect(() => validateRpc('auth:session', ['extra'])).toThrow('请求参数无效')
     expect(() => validateRpc('mail:get', ['account', 'INBOX', 0])).toThrow('请求参数无效')
+    expect(() => validateRpc('mail:attachment', ['account', 'INBOX', 0, '55', 'attachment-1'])).toThrow('请求参数无效')
     expect(() => validateRpc('mail:list', ['account', 'INBOX', { limit: 51 }])).toThrow('请求参数无效')
     expect(() => validateRpc('mail:list', ['account', 'INBOX', { query: { since: 'yesterday' } }])).toThrow('请求参数无效')
     expect(() => validateRpc('accounts:update-authorization', ['account', 'x'.repeat(2001)])).toThrow('请求参数无效')

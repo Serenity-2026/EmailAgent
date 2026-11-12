@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { complete, listAiModels, parseGeneratedDraft, resolveAiKey, validateAiSettings } from './ai'
+import { complete, generateDigest, listAiModels, parseGeneratedDraft, resolveAiKey, validateAiSettings } from './ai'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -57,6 +57,25 @@ describe('AI input and output boundaries', () => {
     const saved = { baseUrl: 'https://first.example/v1', model: 'a', apiKey: 'saved-key', dailyTime: '09:00', autoDaily: false }
     expect(resolveAiKey('https://first.example/v1/', '', saved)).toBe('saved-key')
     expect(resolveAiKey('https://second.example/v1', '', saved)).toBe('')
+  })
+
+  it('does not include attachment metadata or content in digest model input', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+      choices: [{ message: { content: '摘要' } }]
+    }) })
+    vi.stubGlobal('fetch', fetchMock)
+    await generateDigest({
+      baseUrl: 'https://example.com/v1', model: 'test', apiKey: 'key', dailyTime: '09:00', autoDaily: false
+    }, '2026-11-12', [{
+      uid: 7, accountId: 'account', folder: 'INBOX', uidValidity: '55', from: 'teacher@example.com',
+      to: 'student@qq.com', subject: '课程', date: '2026-11-12T01:00:00.000Z', unread: true,
+      text: '正文', inlineImages: [], attachments: [{ id: 'attachment-1', name: 'private-plan.pdf',
+        contentType: 'application/pdf', size: 100, downloadable: true }]
+    }])
+    const serialized = String((fetchMock.mock.calls[0][1] as RequestInit).body)
+    expect(serialized).toContain('正文')
+    expect(serialized).not.toContain('private-plan.pdf')
+    expect(serialized).not.toContain('attachment-1')
   })
 
   it('aborts an in-flight model request with the Agent job signal', async () => {

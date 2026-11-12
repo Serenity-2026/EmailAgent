@@ -2,7 +2,7 @@ import React, { useEffect } from 'react'
 import { Alert, Button, Modal } from 'antd'
 import 'antd/dist/reset.css'
 import type {
-  AgentMessage, AgentProposal, DesktopApi, MailFolder, MailSummary, ThemeMode
+  AgentMessage, AgentProposal, DesktopApi, MailAttachment, MailFolder, MailSummary, ThemeMode
 } from '../../../shared/models'
 import { emptyDraft, useAccountSettingsState, useAgentState, useDigestState, useMailState, useSessionState } from './use-app-state'
 import { BootstrapView, ConnectionErrorView, LaunchView, LoginView } from '../features/auth/auth-views'
@@ -630,6 +630,21 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     void api.openExternalLink(url).catch((err) => setError(errorText(err)))
   }
 
+  async function saveMailAttachment(attachment: MailAttachment): Promise<string | undefined> {
+    if (!detail) return undefined
+    const epoch = sessionEpoch.current
+    setError('')
+    try {
+      const result = await api.saveAttachment(detail.accountId, detail.folder, detail.uid, detail.uidValidity,
+        attachment.id, attachment.name)
+      if (epoch !== sessionEpoch.current || !result.saved) return undefined
+      return result.fileName || attachment.name
+    } catch (err) {
+      if (epoch === sessionEpoch.current) setError(errorText(err))
+      return undefined
+    }
+  }
+
   async function generateMailDraft(): Promise<void> {
     const epoch = sessionEpoch.current
     setPromptBusy(true)
@@ -994,7 +1009,8 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
           warnings={mailWarnings} truncated={mailTruncated} hasMore={Boolean(mailNextCursor)} loadingMore={mailLoadingMore}
           onSearch={setMailSearchDraft} onApplySearch={applyMailSearch} onClearSearch={clearMailSearch}
           onLoadMore={() => void loadMoreMail()}
-          onOpenMail={(mail) => void openMail(mail)} onOpenLink={openMailLink} onReply={() => newMessage(true)} />}
+          onOpenMail={(mail) => void openMail(mail)} onOpenLink={openMailLink}
+          onSaveAttachment={saveMailAttachment} onReply={() => newMessage(true)} />}
     </main>
 
     <SettingsDialogs error={error} themeMode={themeMode} accountSettingsOpen={accountSettingsOpen}

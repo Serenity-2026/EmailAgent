@@ -39,6 +39,8 @@ function apiFor(session: string | null, bootstrapRequired = false, demoMode = fa
     listMailFolders: vi.fn(async () => [{ id: 'inbox', path: 'INBOX', name: 'INBOX', specialUse: '\\Inbox', selectable: true, readOnly: false }]),
     listMail: vi.fn(async () => ({ messages: [mail], truncated: false, warnings: [] })),
     getMail: vi.fn(), openExternalLink: vi.fn(async () => undefined),
+    saveAttachment: vi.fn(async (_accountId, _folder, _uid, _uidValidity, _attachmentId, suggestedName) =>
+      ({ saved: true, fileName: suggestedName })),
     getSentFolder: vi.fn(async () => 'Sent'), sendMail: vi.fn(async () => undefined),
     listSavedDrafts: vi.fn(async () => savedDrafts),
     saveDraft: vi.fn(async (id, draft) => {
@@ -248,6 +250,33 @@ describe('renderer critical paths', () => {
     await flush()
     expect(api.sendMail).toHaveBeenCalled()
     expect(api.removeSavedDraft).toHaveBeenCalledWith('saved-draft')
+  })
+
+  it('downloads an allowed attachment on demand and disables an oversized one', async () => {
+    const api = apiFor('dmc')
+    api.getMail = vi.fn(async () => ({ ...mail, uidValidity: '55', to: account.address, text: '正文',
+      inlineImages: [], attachments: [
+        { id: 'attachment-1', name: 'report.pdf', contentType: 'application/pdf', size: 2048, downloadable: true },
+        { id: 'attachment-2', name: 'large.zip', contentType: 'application/zip', size: 11_000_000,
+          downloadable: false, reason: '单个附件超过 10 MB' }
+      ] }))
+    window.emailAgent = api
+    const { EmailApp } = await import('./app/email-app')
+    const appRoot = createRoot(container)
+    root = appRoot
+    await act(async () => appRoot.render(<EmailApp themeMode="system" setThemeMode={() => undefined} dark={false} />))
+    await flush(); await flush()
+    const row = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('课程安排'))
+    await act(async () => row?.click())
+    await flush()
+    const report = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('report.pdf')) as HTMLButtonElement
+    const large = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('large.zip')) as HTMLButtonElement
+    expect(large.disabled).toBe(true)
+    expect(large.title).toContain('10 MB')
+    await act(async () => report.click())
+    await flush()
+    expect(api.saveAttachment).toHaveBeenCalledWith(account.id, 'INBOX', 7, '55', 'attachment-1', 'report.pdf')
+    expect(container.textContent).toContain('已保存附件：report.pdf')
   })
 
   it('navigates real folders, loads older mail, remembers account search state and falls back safely', async () => {

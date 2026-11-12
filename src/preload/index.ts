@@ -26,6 +26,8 @@ const api: DesktopApi = {
   listMailFolders: (accountId) => invoke('mail:folders', accountId),
   listMail: (accountId, folder, options) => invoke('mail:list', accountId, folder, options || {}),
   getMail: (accountId, folder, uid, markRead) => invoke('mail:get', accountId, folder, uid, markRead),
+  saveAttachment: (accountId, folder, uid, uidValidity, attachmentId, suggestedName) =>
+    invoke('mail:save-attachment', accountId, folder, uid, uidValidity, attachmentId, suggestedName),
   openExternalLink: (url) => invoke('mail:open-link', url),
   getSentFolder: (accountId) => invoke('mail:sent-folder', accountId),
   sendMail: (draft) => invoke('mail:send', draft),

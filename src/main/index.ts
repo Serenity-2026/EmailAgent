@@ -1,9 +1,11 @@
-import { join } from 'node:path'
+import { writeFile } from 'node:fs/promises'
+import { basename, join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import { API_CHANNELS } from '../shared/api'
 import { BackendClient } from './backend-client'
 import { LocalService } from './local-service'
-import type { ThemeMode } from '../shared/models'
+import type { AttachmentDownload, AttachmentSaveResult, ThemeMode } from '../shared/models'
+import { MAX_ATTACHMENT_BYTES, sanitizeAttachmentFilename } from '../shared/attachments'
 
 let window: BrowserWindow | null = null
 let client: BackendClient
@@ -76,6 +78,27 @@ function registerIpc(): void {
   ipcMain.handle('app:compose-dirty', (event, value: boolean) => {
     if (event.senderFrame !== window?.webContents.mainFrame || typeof value !== 'boolean') throw new Error('草稿状态无效')
     composeDirty = value
+  })
+  ipcMain.handle('mail:save-attachment', async (event, accountId: string, folder: string, uid: number,
+    uidValidity: string, attachmentId: string, suggestedName: string): Promise<AttachmentSaveResult> => {
+    if (event.senderFrame !== window?.webContents.mainFrame || !window ||
+      ![accountId, folder, uidValidity, attachmentId, suggestedName].every((value) => typeof value === 'string') ||
+      !Number.isSafeInteger(uid) || uid < 1) throw new Error('附件请求无效')
+    const selection = await dialog.showSaveDialog(window, {
+      title: '保存附件', defaultPath: sanitizeAttachmentFilename(suggestedName),
+      buttonLabel: '保存', properties: ['showOverwriteConfirmation', 'createDirectory']
+    })
+    if (selection.canceled || !selection.filePath) return { saved: false }
+    await localService?.ready()
+    const attachment = await client.request<AttachmentDownload>('mail:attachment', [
+      accountId, folder, uid, uidValidity, attachmentId
+    ])
+    const content = Buffer.from(attachment.base64, 'base64')
+    if (attachment.size !== content.length || content.length > MAX_ATTACHMENT_BYTES) {
+      throw new Error('附件大小校验失败，未保存文件')
+    }
+    await writeFile(selection.filePath, content)
+    return { saved: true, fileName: basename(selection.filePath) }
   })
 }
 

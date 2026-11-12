@@ -72,7 +72,28 @@ export interface MailDetail extends MailSummary {
   inlineImages: { contentId: string; contentType: string; base64: string }[]
   messageId?: string
   references?: string[]
-  attachmentNames: string[]
+  attachments: MailAttachment[]
+}
+
+export interface MailAttachment {
+  id: string
+  name: string
+  contentType: string
+  size: number
+  downloadable: boolean
+  reason?: string
+}
+
+export interface AttachmentDownload {
+  fileName: string
+  contentType: string
+  size: number
+  base64: string
+}
+
+export interface AttachmentSaveResult {
+  saved: boolean
+  fileName?: string
 }
 
 export interface MailDraft {
@@ -224,6 +245,8 @@ export interface DesktopApi {
   listMailFolders(accountId: string): Promise<MailFolder[]>
   listMail(accountId: string, folder: string, options?: MailListOptions): Promise<MailPage>
   getMail(accountId: string, folder: string, uid: number, markRead?: boolean): Promise<MailDetail>
+  saveAttachment(accountId: string, folder: string, uid: number, uidValidity: string,
+    attachmentId: string, suggestedName: string): Promise<AttachmentSaveResult>
   openExternalLink(url: string): Promise<void>
   getSentFolder(accountId: string): Promise<string | null>
   sendMail(draft: MailDraft): Promise<void>

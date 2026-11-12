@@ -1,7 +1,7 @@
 export const API_CHANNELS = [
   'auth:bootstrap-status', 'auth:bootstrap', 'auth:session', 'auth:login', 'auth:logout', 'auth:create', 'auth:password',
   'accounts:list', 'accounts:add', 'accounts:remove', 'accounts:update-authorization', 'accounts:health',
-  'mail:folders', 'mail:list', 'mail:get', 'mail:sent-folder', 'mail:send',
+  'mail:folders', 'mail:list', 'mail:get', 'mail:attachment', 'mail:sent-folder', 'mail:send',
   'drafts:list', 'drafts:save', 'drafts:remove',
   'ai:settings:get', 'ai:models', 'ai:settings:save', 'ai:settings:test', 'ai:draft', 'ai:digest', 'ai:digest:history',
   'agent:history', 'agent:overview', 'agent:run', 'agent:cancel', 'agent:confirm', 'agent:clear', 'theme:get', 'theme:set'
@@ -42,6 +42,8 @@ export function validateRpc(channel: string, args: unknown[]): void {
     }
     case 'mail:get': valid = args.length >= 3 && args.length <= 4 && string(args[0]) && string(args[1]) && uid(args[2]) &&
       (args.length === 3 || typeof args[3] === 'boolean'); break
+    case 'mail:attachment': valid = args.length === 5 && string(args[0]) && string(args[1]) && uid(args[2]) &&
+      string(args[3], 100) && string(args[4], 100); break
     case 'ai:draft': valid = args.length === 2 && string(args[0], 10_000) && string(args[1]); break
     case 'agent:run': valid = args.length === 3 && string(args[0], 10_000) && string(args[1]) &&
       typeof args[2] === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(args[2]); break

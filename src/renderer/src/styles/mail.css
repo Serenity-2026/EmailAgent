@@ -20,6 +20,8 @@
 .reader-card h2 { margin: 0 0 22px; color: #202942; font-size: 24px; line-height: 1.4; letter-spacing: -.4px; }
 .reader-meta { display: grid; gap: 9px; color: #76839a; font-size: 12px; }
 .reader-meta strong { color: #475570; }
+.attachment-list { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.attachment-notice { color: #25855a; }
 .reader-divider { height: 1px; margin: 28px 0; background: #edf0f5; }
 .mail-body, .digest-body { white-space: pre-wrap; overflow-wrap: anywhere; color: #364158; line-height: 1.85; font-size: 14px; }
 .mail-rich-body iframe { display: block; width: 100%; min-height: 120px; border: 0; background: #fff; }

@@ -10,13 +10,13 @@ vi.mock('./ai', () => ({
 }))
 vi.mock('./mail-overview', () => ({ getMailOverview: vi.fn() }))
 vi.mock('./mail', () => ({
-  executeAgentAction: vi.fn(), getMail: vi.fn(), getSentFolder: vi.fn(), listMail: vi.fn(),
+  executeAgentAction: vi.fn(), getMail: vi.fn(), getMailAttachment: vi.fn(), getSentFolder: vi.fn(), listMail: vi.fn(),
   inspectAccountHealth: vi.fn(), listMailFolders: vi.fn(), sendMail: vi.fn(), testAccount: vi.fn(), todayMail: vi.fn()
 }))
 
 import { runAgentTask } from './agent'
 import { generateDigest } from './ai'
-import { getMail, inspectAccountHealth, listMail, testAccount, todayMail } from './mail'
+import { getMail, getMailAttachment, inspectAccountHealth, listMail, testAccount, todayMail } from './mail'
 import { BackendContext } from './service'
 
 const account: StoredAccount = {
@@ -89,7 +89,7 @@ describe('BackendContext Agent concurrency', () => {
     vi.mocked(getMail).mockResolvedValue({
       uid: 7, accountId: account.id, folder: 'INBOX', uidValidity: '1', from: 'teacher@example.com',
       subject: '课程', date: new Date().toISOString(), unread: false, to: '', text: '正文', html: '',
-      inlineImages: [], attachmentNames: []
+      inlineImages: [], attachments: []
     })
     const running = context.invoke('agent:run', ['总结邮件', '', jobIds[0]])
     await ready
@@ -268,5 +268,19 @@ describe('BackendContext saved drafts', () => {
     await expect(context.invoke('drafts:save', ['', {
       accountId: 'missing', to: [], cc: [], bcc: [], subject: '孤立草稿', text: ''
     }])).rejects.toThrow('邮箱账户不存在')
+  })
+})
+
+describe('BackendContext attachment access', () => {
+  it('binds attachment download to the current account and mailbox identity', async () => {
+    const { context } = contextWithHistory()
+    vi.mocked(getMailAttachment).mockResolvedValue({
+      fileName: 'report.pdf', contentType: 'application/pdf', size: 3, base64: 'YWJj'
+    })
+    await expect(context.invoke('mail:attachment', [account.id, 'INBOX', 7, '55', 'attachment-1']))
+      .resolves.toMatchObject({ fileName: 'report.pdf', size: 3 })
+    expect(getMailAttachment).toHaveBeenCalledWith(account, 'INBOX', 7, '55', 'attachment-1')
+    await expect(context.invoke('mail:attachment', ['missing', 'INBOX', 7, '55', 'attachment-1']))
+      .rejects.toThrow('邮箱账户不存在')
   })
 })

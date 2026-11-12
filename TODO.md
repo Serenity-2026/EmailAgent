@@ -312,7 +312,7 @@
 
 - [x] 已完成 `feature/saved-drafts`：用户 vault 加密保存最近 20 条本地草稿；撰写窗口与应用关闭前提示未保存修改；发送成功后移除对应草稿。
 - [x] 已完成 `feature/multiple-recipients`：草稿使用数组型 `to/cc/bcc`，逐地址校验并限制总数；旧本地草稿和 Agent 历史中的字符串收件人会安全迁移。
-- [ ] `feature/safe-attachment-download`：按需下载附件，限制单个/总大小，净化文件名，由用户选择保存位置；附件默认不交给 AI。
+- [x] 已完成 `feature/safe-attachment-download`：附件按需经系统对话框保存，限制单件 10 MB/邮件合计 20 MB，净化文件名并复核 UIDVALIDITY；附件不进入 AI 输入。
 - [ ] `feature/redacted-diagnostics`：增加本地轮转诊断日志和“一键导出诊断信息”，自动排除授权码、API Key、会话令牌和邮件正文。
 - [ ] `chore/platform-packaging`：在 macOS 流程稳定后增加 Windows 打包与启动验证；不同平台分别记录 Docker 和安全存储前置条件。
 

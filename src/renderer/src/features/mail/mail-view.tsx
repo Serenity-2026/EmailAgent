@@ -1,6 +1,6 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Alert, Button, Empty, Input, Select, Spin } from 'antd'
-import type { MailDetail, MailSearchQuery, MailSummary } from '../../../../shared/models'
+import type { MailAttachment, MailDetail, MailSearchQuery, MailSummary } from '../../../../shared/models'
 import { MailHtmlView } from '../../mail-html'
 
 const dateText = (date: string): string => new Intl.DateTimeFormat('zh-CN', {
@@ -9,13 +9,24 @@ const dateText = (date: string): string => new Intl.DateTimeFormat('zh-CN', {
 
 export function MailView({ accountId, mails, selected, detail, mailLoading, detailLoading,
   search, warnings, truncated, hasMore, loadingMore,
-  onSearch, onApplySearch, onClearSearch, onLoadMore, onOpenMail, onOpenLink, onReply }: {
+  onSearch, onApplySearch, onClearSearch, onLoadMore, onOpenMail, onOpenLink, onSaveAttachment, onReply }: {
   accountId: string; mails: MailSummary[]; selected: MailSummary | null; detail: MailDetail | null
   mailLoading: boolean; detailLoading: boolean
   search: MailSearchQuery; warnings: string[]; truncated: boolean; hasMore: boolean; loadingMore: boolean
   onSearch: (query: MailSearchQuery) => void; onApplySearch: () => void; onClearSearch: () => void; onLoadMore: () => void
-  onOpenMail: (mail: MailSummary) => void; onOpenLink: (url: string) => void; onReply: () => void
+  onOpenMail: (mail: MailSummary) => void; onOpenLink: (url: string) => void
+  onSaveAttachment: (attachment: MailAttachment) => Promise<string | undefined>; onReply: () => void
 }): React.JSX.Element {
+  const [attachmentBusy, setAttachmentBusy] = useState('')
+  const [attachmentNotice, setAttachmentNotice] = useState('')
+  const saveAttachment = async (attachment: MailAttachment): Promise<void> => {
+    setAttachmentBusy(attachment.id)
+    setAttachmentNotice('')
+    try {
+      const saved = await onSaveAttachment(attachment)
+      if (saved) setAttachmentNotice(`已保存附件：${saved}`)
+    } finally { setAttachmentBusy('') }
+  }
   return <section className="content">
     <div className="mail-list">
       <div className="mail-list-head"><span>邮件列表</span><span>{mails.length} 封</span></div>
@@ -56,7 +67,14 @@ export function MailView({ accountId, mails, selected, detail, mailLoading, deta
           <div><strong>发件人：</strong>{detail.from}</div>
           <div><strong>收件人：</strong>{detail.to}</div>
           <div><strong>时间：</strong>{new Date(detail.date).toLocaleString('zh-CN')}</div>
-          {detail.attachmentNames.length > 0 && <div><strong>附件：</strong>{detail.attachmentNames.join('、')}</div>}
+          {detail.attachments.length > 0 && <div className="attachment-list"><strong>附件：</strong>
+            {detail.attachments.map((attachment) => <Button key={attachment.id} size="small"
+              disabled={!attachment.downloadable} loading={attachmentBusy === attachment.id}
+              title={attachment.reason} onClick={() => void saveAttachment(attachment)}>
+              {attachment.name}（{Math.max(1, Math.ceil(attachment.size / 1024))} KB）
+            </Button>)}
+            {attachmentNotice && <span className="attachment-notice">{attachmentNotice}</span>}
+          </div>}
         </div>
         <div className="reader-divider" />
         {detail.html ? <MailHtmlView key={`${detail.accountId}-${detail.folder}-${detail.uid}`}

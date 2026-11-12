@@ -2,9 +2,10 @@ import { ImapFlow, type FetchMessageObject } from 'imapflow'
 import { simpleParser } from 'mailparser'
 import nodemailer from 'nodemailer'
 import type {
-  AccountHealth, AgentAction, AgentMailRef, MailDetail, MailDraft, MailFolder, MailListOptions, MailPage,
+  AccountHealth, AgentAction, AgentMailRef, AttachmentDownload, MailAttachment, MailDetail, MailDraft, MailFolder, MailListOptions, MailPage,
   MailSearchQuery, MailSummary
 } from '../shared/models'
+import { attachmentDownloadReason, sanitizeAttachmentFilename } from '../shared/attachments'
 import { PROVIDERS, validateRecipients } from './providers'
 import type { StoredAccount } from '../shared/vault'
 
@@ -12,6 +13,8 @@ export const MAX_INTERACTIVE_MAIL_BYTES = 20_000_000
 export const MAX_AI_MAIL_BYTES = 5_000_000
 const MAIL_PAGE_SIZE = 50
 const MAX_SEARCH_RESULTS = 200
+
+type ParsedAttachment = Awaited<ReturnType<typeof simpleParser>>['attachments'][number]
 
 interface FolderListing {
   path: string
@@ -108,6 +111,27 @@ function summaryOf(account: StoredAccount, folder: string, message: FetchMessage
     date: Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString(),
     unread: !message.flags?.has('\\Seen')
   }
+}
+
+function downloadableAttachmentParts(attachments: ParsedAttachment[]): ParsedAttachment[] {
+  return attachments.filter((attachment) => attachment.contentDisposition === 'attachment' || !attachment.contentId)
+}
+
+function attachmentMetadata(attachments: ParsedAttachment[]): MailAttachment[] {
+  const parts = downloadableAttachmentParts(attachments)
+  const total = parts.reduce((sum, attachment) => sum + attachment.content.length, 0)
+  return parts.map((attachment, index) => {
+    const size = attachment.content.length
+    const reason = attachmentDownloadReason(size, total)
+    return {
+      id: `attachment-${index + 1}`,
+      name: sanitizeAttachmentFilename(attachment.filename || '未命名附件'),
+      contentType: attachment.contentType || 'application/octet-stream',
+      size,
+      downloadable: !reason,
+      ...(reason ? { reason } : {})
+    }
+  })
 }
 
 function folderId(path: string): string {
@@ -280,10 +304,41 @@ async function readMailFromOpenMailbox(client: ImapFlow, account: StoredAccount,
     inlineImages,
     messageId: parsed.messageId,
     references: parsed.references ? (Array.isArray(parsed.references) ? parsed.references : [parsed.references]) : undefined,
-    attachmentNames: parsed.attachments.filter((attachment) =>
-      attachment.contentDisposition === 'attachment' || !attachment.contentId)
-      .map((attachment) => attachment.filename || '未命名附件')
+    attachments: attachmentMetadata(parsed.attachments)
   }
+}
+
+export async function getMailAttachment(account: StoredAccount, folder: string, uid: number,
+  expectedUidValidity: string, attachmentId: string): Promise<AttachmentDownload> {
+  if (!/^attachment-[1-9]\d*$/.test(attachmentId)) throw new Error('附件编号无效')
+  return withImap(account, async (client) => {
+    const lock = await client.getMailboxLock(folder, { readOnly: true })
+    try {
+      const uidValidity = client.mailbox && client.mailbox.uidValidity.toString()
+      if (!uidValidity || uidValidity !== expectedUidValidity) throw new Error('邮件所在文件夹已变化，请重新打开邮件')
+      const metadata = await client.fetchOne(uid, { uid: true, size: true }, { uid: true })
+      if (!metadata) throw new Error('邮件不存在或已被移走')
+      if ((metadata.size || 0) > MAX_INTERACTIVE_MAIL_BYTES) throw new Error('邮件过大，无法安全下载附件')
+      const source = await client.fetchOne(uid, { source: true }, { uid: true })
+      if (!source || !source.source) throw new Error('邮件不存在或已被移走')
+      const parsed = await simpleParser(source.source)
+      const parts = downloadableAttachmentParts(parsed.attachments)
+      const details = attachmentMetadata(parsed.attachments)
+      const index = Number(attachmentId.slice('attachment-'.length)) - 1
+      const detail = details[index]
+      const attachment = parts[index]
+      if (!detail || !attachment) throw new Error('附件不存在，请重新打开邮件')
+      if (!detail.downloadable) throw new Error(detail.reason || '附件超过安全下载限制')
+      return {
+        fileName: detail.name,
+        contentType: detail.contentType,
+        size: detail.size,
+        base64: attachment.content.toString('base64')
+      }
+    } finally {
+      lock.release()
+    }
+  })
 }
 
 export async function getSentFolder(account: StoredAccount): Promise<string | null> {

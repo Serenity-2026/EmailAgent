@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   uidValidity: 55n, archive: false, exists: true, calls: [] as string[], searchCount: 0,
   connectionError: false, smtpError: false,
   sourceSize: 100, missingSourceUids: new Set<number>(), missingMetadataUids: new Set<number>(),
+  sourceContent: null as Buffer | null,
   sentMessages: [] as Array<Record<string, unknown>>,
   searchQueries: [] as Array<Record<string, unknown>>,
   folders: [] as Array<{ path: string; name: string; specialUse?: string; flags?: Set<string> }>
@@ -47,7 +48,7 @@ vi.mock('imapflow', () => ({
       const metadata = { uid, size: state.sourceSize,
         envelope: { subject: `Mail ${uid}`, from: [{ address: 'teacher@example.com' }] },
         flags: new Set(), internalDate: new Date('2026-09-25T00:00:00.000Z') }
-      return query.source ? { uid, source: Buffer.from(
+      return query.source ? { uid, source: state.sourceContent || Buffer.from(
         'From: teacher@example.com\r\nSubject: Test\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n周五提交报告。') } : metadata
     }
     async messageFlagsAdd(): Promise<boolean> { state.calls.push('markRead'); return true }
@@ -77,7 +78,7 @@ vi.mock('nodemailer', () => ({ default: { createTransport: () => ({
 }) } }))
 
 import {
-  executeAgentAction, getMail, inspectAccountHealth, listMail, listMailFolders, MAX_INTERACTIVE_MAIL_BYTES,
+  executeAgentAction, getMail, getMailAttachment, inspectAccountHealth, listMail, listMailFolders, MAX_INTERACTIVE_MAIL_BYTES,
   readAgentMailBatch, searchAgentMail, sendMail, testAccount, todayMail
 } from './mail'
 
@@ -95,6 +96,7 @@ beforeEach(() => {
   state.connectionError = false
   state.smtpError = false
   state.sourceSize = 100
+  state.sourceContent = null
   state.missingSourceUids = new Set()
   state.missingMetadataUids = new Set()
   state.searchQueries = []
@@ -136,6 +138,36 @@ describe('mail sending recipients', () => {
       accountId: account.id, to: ['one@example.com'], cc: ['张三'], bcc: [], subject: '通知', text: '正文'
     })).rejects.toThrow('有效的收件人')
     expect(state.sentMessages).toHaveLength(1)
+  })
+})
+
+describe('safe attachment download', () => {
+  it('returns sanitized metadata and downloads a selected attachment without marking the message read', async () => {
+    state.sourceContent = Buffer.from([
+      'From: teacher@example.com', 'To: student@qq.com', 'Subject: Files',
+      'Content-Type: multipart/mixed; boundary="test-boundary"', '', '--test-boundary',
+      'Content-Type: text/plain; charset=utf-8', '', '正文', '--test-boundary',
+      'Content-Type: text/plain; name="../../CON.txt"',
+      'Content-Disposition: attachment; filename="../../CON.txt"',
+      'Content-Transfer-Encoding: base64', '', Buffer.from('hello').toString('base64'),
+      '--test-boundary--', ''
+    ].join('\r\n'))
+    state.sourceSize = state.sourceContent.length
+    const detail = await getMail(account, 'INBOX', 7, false)
+    expect(detail.attachments).toEqual([{
+      id: 'attachment-1', name: '_CON.txt', contentType: 'text/plain', size: 5, downloadable: true
+    }])
+    const downloaded = await getMailAttachment(account, 'INBOX', 7, '55', 'attachment-1')
+    expect(Buffer.from(downloaded.base64, 'base64').toString()).toBe('hello')
+    expect(downloaded).toMatchObject({ fileName: '_CON.txt', size: 5, contentType: 'text/plain' })
+    expect(state.calls).toContain('lock:INBOX:true')
+    expect(state.calls).not.toContain('markRead')
+  })
+
+  it('rejects stale mailbox identity and unknown attachment ids', async () => {
+    state.uidValidity = 56n
+    await expect(getMailAttachment(account, 'INBOX', 7, '55', 'attachment-1')).rejects.toThrow('文件夹已变化')
+    await expect(getMailAttachment(account, 'INBOX', 7, '56', 'not-an-attachment')).rejects.toThrow('附件编号无效')
   })
 })
 

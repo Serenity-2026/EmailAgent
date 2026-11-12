@@ -9,7 +9,7 @@ import { runAgentTask } from './agent'
 import { AgentProposalRegistry, executeConfirmedActions } from './agent-proposals'
 import { getMailOverview } from './mail-overview'
 import {
-  executeAgentAction, getMail, getSentFolder, inspectAccountHealth, listMail, listMailFolders,
+  executeAgentAction, getMail, getMailAttachment, getSentFolder, inspectAccountHealth, listMail, listMailFolders,
   sendMail, testAccount, todayMail
 } from './mail'
 import { validateAccount } from './providers'
@@ -231,6 +231,13 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
     if (typeof markRead !== 'boolean') throw new Error('阅读选项无效')
     const version = store.sessionVersion
     const result = await getMail(accountById(accountId), folder, uid, markRead)
+    requireSession(version)
+    return result
+  })
+  handlers.set('mail:attachment', async (accountId: string, folder: string, uid: number,
+    uidValidity: string, attachmentId: string) => {
+    const version = store.sessionVersion
+    const result = await getMailAttachment(accountById(accountId), folder, uid, uidValidity, attachmentId)
     requireSession(version)
     return result
   })
