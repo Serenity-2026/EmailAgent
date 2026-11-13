@@ -1,10 +1,12 @@
 import React from 'react'
 import { Alert, Button, Empty, Select, Spin } from 'antd'
 import type { DigestHistoryItem, MailSummary } from '../../../../shared/models'
+import { Markdown } from '../../markdown'
 
-export function DigestView({ digest, history, loading, error, onSelect, onRetry, onOpenSource }: {
+export function DigestView({ digest, history, loading, error, onSelect, onRetry, onOpenSource, onOpenLink }: {
   digest: DigestHistoryItem | null; history: DigestHistoryItem[]; loading: boolean; error: string
   onSelect: (generatedAt: string) => void; onRetry: () => void; onOpenSource: (source: MailSummary) => void
+  onOpenLink?: (url: string) => void
 }): React.JSX.Element {
   return <section className="digest-view"><div className="digest-card">
     <h2>{digest?.date || '今日'} 邮件摘要</h2>
@@ -16,7 +18,7 @@ export function DigestView({ digest, history, loading, error, onSelect, onRetry,
     {loading ? <div className="top-spinner"><Spin /></div> : digest ? <>
       <div className="digest-meta">最近成功：{new Date(digest.generatedAt).toLocaleString()} ·
         {digest.mode === 'auto' ? ' 自动生成' : ' 手动生成'}</div>
-      <div className="digest-body">{digest.content}</div>
+      <div className="digest-body"><Markdown text={digest.content} onLink={onOpenLink} /></div>
       {digest.warnings.map((warning, index) => <div key={index} className="agent-warning">{warning}</div>)}
       {digest.sources.length > 0 && <>
         <div className="reader-divider" />

@@ -1,12 +1,13 @@
 import React from 'react'
 import { Button, Empty, Input, Modal, Spin, Alert } from 'antd'
 import type { AgentConversation, AgentProposal, MailDraft, MailOverview, MailSummary } from '../../../../shared/models'
+import { Markdown } from '../../markdown'
 
 const RadarChart = React.lazy(async () => ({ default: (await import('@ant-design/plots')).Radar }))
 
 export function AgentView({ conversations, conversationId, activeConversation, busy, status, proposal,
   prompt, overview, overviewLoading, overviewError, dark, accountCount, messagesRef,
-  onClear, onSelectConversation, onLoadOverview, onOpenSource, onOpenDraft, onConfirm, onPrompt, onRun, onCancel }: {
+  onClear, onSelectConversation, onLoadOverview, onOpenSource, onOpenDraft, onConfirm, onPrompt, onRun, onCancel, onOpenLink }: {
   conversations: AgentConversation[]; conversationId: string; activeConversation?: AgentConversation
   busy: boolean; status: string; proposal: AgentProposal | null; prompt: string
   overview: MailOverview | null; overviewLoading: boolean; overviewError: string; dark: boolean
@@ -14,7 +15,7 @@ export function AgentView({ conversations, conversationId, activeConversation, b
   onClear: () => void; onSelectConversation: (id: string) => void; onLoadOverview: () => void
   onOpenSource: (source: MailSummary) => void; onOpenDraft: (draft: MailDraft) => void
   onConfirm: (proposal: AgentProposal) => Promise<void>; onPrompt: (value: string) => void; onRun: () => void
-  onCancel: () => void
+  onCancel: () => void; onOpenLink?: (url: string) => void
 }): React.JSX.Element {
   return <section className="agent-layout">
     <div className="agent-history">
@@ -55,12 +56,13 @@ export function AgentView({ conversations, conversationId, activeConversation, b
         </div>
         {activeConversation?.messages.map((message) => <div key={message.id}
           className={`agent-message ${message.role}`}>
-          <div className="agent-message-text">{message.content.split(/(\[\d+\])/g).map((part, index) => {
-            const number = /^\[(\d+)\]$/.exec(part)?.[1]
-            const source = message.sources?.find((item) => item.citationNumber === Number(number))
-            return source ? <button key={index} className="agent-inline-source"
-              onClick={() => onOpenSource(source)}>{part}</button> : part
-          })}</div>
+          <div className={`agent-message-text${message.role === 'assistant' ? '' : ' is-plain'}`}>
+            {message.role === 'assistant' ? <Markdown text={message.content} onLink={onOpenLink}
+              onCitation={message.sources?.length ? (number) => {
+                const source = message.sources?.find((item) => item.citationNumber === number)
+                if (source) onOpenSource(source)
+              } : undefined} /> : message.content}
+          </div>
           {message.scope && <div className="agent-scope">检索范围：{message.scope}</div>}
           {message.truncated && <div className="agent-limit">结果较多，仅分析了最近的部分邮件。请缩小检索条件。</div>}
           {message.warnings?.map((warning, index) => <div key={index} className="agent-warning">{warning}</div>)}

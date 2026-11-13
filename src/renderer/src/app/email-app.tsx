@@ -1010,10 +1010,10 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
           setDraft(nextDraft); setActiveDraftId(''); setDraftSnapshot(''); setComposePreview(false); setComposeOpen(true)
         }}
         onConfirm={confirmAgentActions} onPrompt={setAgentPrompt} onRun={() => void runAgent()}
-        onCancel={() => void cancelAgent()} /> : view === 'digest' ?
+        onCancel={() => void cancelAgent()} onOpenLink={openMailLink} /> : view === 'digest' ?
         <DigestView digest={digest} history={digestHistory} loading={digestLoading} error={digestError}
           onSelect={(generatedAt) => setDigest(digestHistory.find((item) => item.generatedAt === generatedAt) || null)}
-          onRetry={() => void createDigest()} onOpenSource={openDigestSource} /> :
+          onRetry={() => void createDigest()} onOpenSource={openDigestSource} onOpenLink={openMailLink} /> :
         <MailView accountId={accountId} mails={mails} selected={selected} detail={detail}
           mailLoading={mailLoading} detailLoading={detailLoading} search={mailSearchDraft}
           warnings={mailWarnings} truncated={mailTruncated} hasMore={Boolean(mailNextCursor)} loadingMore={mailLoadingMore}

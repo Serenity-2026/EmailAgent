@@ -23,14 +23,16 @@
 .attachment-list { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .attachment-notice { color: #25855a; }
 .reader-divider { height: 1px; margin: 28px 0; background: #edf0f5; }
-.mail-body, .digest-body { white-space: pre-wrap; overflow-wrap: anywhere; color: #364158; line-height: 1.85; font-size: 14px; }
+.mail-body, .digest-body { overflow-wrap: anywhere; color: #364158; line-height: 1.85; font-size: 14px; }
+.mail-body { white-space: pre-wrap; }
 .mail-rich-body iframe { display: block; width: 100%; min-height: 120px; border: 0; background: #fff; }
 .remote-images-note { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; padding: 9px 12px; border-radius: 8px; background: #f3f6fc; color: #68768e; font-size: 12px; }
 .reader-actions { display: flex; gap: 8px; margin-top: 30px; }
 .empty-pane { display: grid; place-items: center; min-height: 100%; color: #8a9ab0; }
 .digest-view { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 32px; }
 .digest-card { max-width: 900px; min-height: 100%; margin: 0 auto; padding: 36px 42px; background: #fff; border: 1px solid #edf0f5; border-radius: 16px; }
-.digest-card h2 { margin: 0 0 16px; font-size: 22px; }
+.digest-card > h2 { margin: 0 0 16px; font-size: 22px; }
+.digest-meta { margin: 0 0 14px; color: #8a94a8; font-size: 12.5px; }
 .digest-sources { display: grid; gap: 8px; margin-top: 18px; }
 .source-row { width: 100%; border: 1px solid #e6ebf6; border-radius: 9px; padding: 11px 13px; text-align: left; background: #f8faff; color: #315dbb; cursor: pointer; }
 .source-row:hover { background: #eef3ff; }

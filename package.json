@@ -30,7 +30,9 @@
     "mysql2": "3.24.5",
     "nodemailer": "10.0.13",
     "react": "19.2.1",
-    "react-dom": "19.2.1"
+    "react-dom": "19.2.1",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1"
   },
   "devDependencies": {
     "@types/mailparser": "^3.4.6",
