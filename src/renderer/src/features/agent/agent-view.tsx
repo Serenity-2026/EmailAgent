@@ -47,7 +47,7 @@ export function AgentView({ conversations, conversationId, activeConversation, b
               <div className="overview-chart"><h3>内容星图</h3>
                 {overview.topics.length ? <React.Suspense fallback={<div className="top-spinner"><Spin /></div>}>
                   <RadarChart data={overview.topics} xField="name" yField="count"
-                    height={280} theme={dark ? 'classicDark' : 'classic'} />
+                    height={300} theme={dark ? 'classicDark' : 'classic'} />
                 </React.Suspense> : <Empty description="暂无主题分布" />}
               </div>
               {overview.sampled && <div className="agent-warning">邮件数量超过检索上限，以上为抽样统计。</div>}

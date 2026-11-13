@@ -11,6 +11,7 @@ import { DigestView } from '../features/digest/digest-view'
 import { AgentView } from '../features/agent/agent-view'
 import { SettingsDialogs } from '../features/settings/settings-dialogs'
 import { ComposeDialogs } from '../features/mail/compose-dialogs'
+import { Icon } from '../icons'
 
 declare global {
   interface Window { emailAgent: DesktopApi }
@@ -1052,11 +1053,13 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
 
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="brand">Email<span>Agent</span></div>
+      <div className="brand"><Icon name="mail" size={19} /><span className="brand-word">Email<span>Agent</span></span></div>
       <button className={`nav-item ${view === 'digest' ? 'active' : ''}`}
-        disabled={!accounts.length} onClick={() => { setView('digest'); if (!digest) void createDigest() }}>今日摘要</button>
+        disabled={!accounts.length} onClick={() => { setView('digest'); if (!digest) void createDigest() }}>
+        <Icon name="digest" />今日摘要</button>
       <button className={`nav-item ${view === 'agent' ? 'active' : ''}`}
-        disabled={!accounts.length} onClick={() => setView('agent')}>对话</button>
+        disabled={!accounts.length} onClick={() => setView('agent')}>
+        <Icon name="chat" />对话</button>
       <div className="sidebar-label">邮箱账户</div>
       {accounts.map((account) => <button key={account.id}
         className={`account-item ${account.id === accountId ? 'active' : ''}`}
@@ -1083,7 +1086,7 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
           {view !== 'agent' && <p>{view === 'digest' ? '汇总今天收到的邮件' : activeAccount?.address || '请先添加邮箱账户'}</p>}
         </div>
         <div className="topbar-actions">
-          {view === 'mail' && <Button onClick={refreshMail} disabled={!accountId}>刷新</Button>}
+          {view === 'mail' && <Button icon={<Icon name="refresh" />} onClick={refreshMail} disabled={!accountId}>刷新</Button>}
           {view === 'digest' && <Button onClick={() => void createDigest()} loading={digestLoading} disabled={!accounts.length}>重新生成</Button>}
           {view === 'agent' && <Button onClick={() => { setAgentConversationId(''); setAgentProposal(null) }}>新对话</Button>}
           <Button onClick={() => void openPrompt()} disabled={!accountId}>一句话写邮件</Button>
