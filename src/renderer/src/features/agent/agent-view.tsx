@@ -69,7 +69,7 @@ export function AgentView({ conversations, conversationId, activeConversation, b
               <div className="overview-chart"><h3>内容星图</h3>
                 {overview.topics.length ? <div ref={chartRef}><React.Suspense fallback={<div className="top-spinner"><Spin /></div>}>
                   <RadarChart key={chartKey} data={overview.topics} xField="name" yField="count"
-                    height={280} theme={dark ? 'classicDark' : 'classic'} />
+                    height={300} theme={dark ? 'classicDark' : 'classic'} />
                 </React.Suspense></div> : <Empty description="暂无主题分布" />}
               </div>
               {overview.warnings.map((warning, index) => <div key={index} className="agent-warning">{warning}</div>)}
