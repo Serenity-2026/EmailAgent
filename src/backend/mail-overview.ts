@@ -46,6 +46,8 @@ export async function getMailOverview(
   const matches: AgentMailRef[] = []
   let sampled = false
   let searched = 0
+  let receivedCount = 0
+  let sentCount = 0
   searches.forEach((result, index) => {
     if (result.status === 'rejected') {
       warnings.push(`${accounts[index].address} 检索失败`)
@@ -53,6 +55,8 @@ export async function getMailOverview(
     }
     searched += result.value.searchedFolders.length
     matches.push(...result.value.matches)
+    receivedCount += result.value.counts.inbox
+    sentCount += result.value.counts.sent
     sampled ||= result.value.truncated
     warnings.push(...result.value.warnings)
   })
@@ -60,7 +64,7 @@ export async function getMailOverview(
   const received = matches.filter((mail) => mail.folder.toUpperCase() === 'INBOX')
   const sent = matches.filter((mail) => mail.folder.toUpperCase() !== 'INBOX')
   const overview: MailOverview = {
-    since: since.toISOString(), received: received.length, sent: sent.length, sampled,
+    since: since.toISOString(), received: receivedCount, sent: sentCount, sampled,
     topSenders: topPeople(received.map((mail) => mail.from)),
     topRecipients: topPeople(sent.flatMap((mail) => mail.to || [])),
     topics: [], warnings

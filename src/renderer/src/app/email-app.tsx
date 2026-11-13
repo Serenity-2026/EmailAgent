@@ -927,12 +927,12 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     if (result.status === 'cancelling') setAgentStatus('正在取消任务…')
   }
 
-  async function loadOverview(): Promise<void> {
+  async function loadOverview(force = false): Promise<void> {
     const epoch = sessionEpoch.current
     setOverviewLoading(true)
     setOverviewError('')
     try {
-      const result = await api.getAgentOverview()
+      const result = await api.getAgentOverview(force ? { force: true } : undefined)
       if (epoch === sessionEpoch.current) setOverview(result)
     } catch (err) {
       if (epoch === sessionEpoch.current) setOverviewError(errorText(err))
@@ -1098,7 +1098,7 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
         prompt={agentPrompt} overview={overview} overviewLoading={overviewLoading} overviewError={overviewError}
         dark={dark} accountCount={accounts.length} messagesRef={agentMessagesRef}
         onClear={clearAgentHistory} onSelectConversation={(id) => { setAgentConversationId(id); setAgentProposal(null) }}
-        onLoadOverview={() => void loadOverview()} onOpenSource={openAgentSource}
+        onLoadOverview={(force) => void loadOverview(force)} onOpenSource={openAgentSource}
         onOpenDraft={(nextDraft) => {
           setDraft(nextDraft); setActiveDraftId(''); setDraftSnapshot(''); setComposePreview(false); setComposeOpen(true)
         }}

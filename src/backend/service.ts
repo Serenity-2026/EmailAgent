@@ -13,6 +13,7 @@ import {
   sendMail, testAccount, todayMail
 } from './mail'
 import { mailListCache } from './mail-cache'
+import { overviewCache } from './overview-cache'
 import { validateAccount } from './providers'
 import { MysqlStore } from './store'
 import { DailyDigestCoordinator } from './digest-scheduler'
@@ -46,6 +47,7 @@ export class BackendContext {
     this.agentJob?.controller.abort()
     this.proposals.clear()
     mailListCache.clearScope(this.store.username)
+    overviewCache.clear(this.store.username)
     if (notify) this.emit('auth:expired', null)
     this.active = false
     this.store.logout()
@@ -254,6 +256,7 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
   handlers.set('mail:send', async (draft: MailDraft) => {
     await sendMail(accountById(draft.accountId), draft)
     mailListCache.clearAccount(store.username, draft.accountId)
+    overviewCache.clear(store.username)
   })
   handlers.set('drafts:list', () => store.savedDrafts)
   handlers.set('drafts:save', async (id: string, draft: MailDraft) => {
@@ -306,9 +309,17 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
   handlers.set('ai:digest:auto', (accountIds: string[]) => digestFor(accountIds, 'auto'))
   handlers.set('ai:digest:history', () => store.digestHistory)
   handlers.set('agent:history', () => store.agentConversations)
-  handlers.set('agent:overview', async () => {
+  handlers.set('agent:overview', async (options?: { force?: boolean }) => {
     const version = store.sessionVersion
-    return getMailOverview([...store.accounts], store.ai, () => requireSession(version))
+    const accounts = [...store.accounts]
+    if (!options?.force) {
+      const cached = overviewCache.get(store.username, accounts)
+      if (cached) return cached
+    }
+    const overview = await getMailOverview(accounts, store.ai, () => requireSession(version))
+    requireSession(version)
+    overviewCache.set(store.username, accounts, overview)
+    return overview
   })
   handlers.set('theme:get', () => store.themeMode)
   handlers.set('theme:set', async (mode: ThemeMode) => {
@@ -363,6 +374,7 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
       (action) => executeAgentAction(accountById(action.mail.accountId), action),
       () => requireSession(version))
     for (const action of proposal.actions) mailListCache.clearAccount(store.username, action.mail.accountId)
+    overviewCache.clear(store.username)
     const conversation = store.agentConversations.find((item) => item.id === proposal.conversationId)
     let historySaved = Boolean(conversation)
     if (conversation) {

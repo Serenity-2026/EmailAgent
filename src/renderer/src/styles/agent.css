@@ -6,7 +6,7 @@
 .agent-history-item { display: block; width: 100%; overflow: hidden; margin-bottom: 4px; padding: 11px 12px; border: 0; border-radius: 9px; background: transparent; color: #4d5b73; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .agent-history-item:hover, .agent-history-item.active { background: #eef3ff; color: #315dbb; }
 .agent-chat { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: #f7f8fc; }
-.agent-messages { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; align-content: start; gap: 18px; padding: 28px 36px; }
+.agent-messages { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 18px; padding: 28px 36px; }
 .agent-overview { width: min(100%, 820px); padding: 22px; border: 1px solid #e9edf5; border-radius: 14px; background: #fff; }
 .agent-overview-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; color: #34435f; }
 .agent-message { max-width: 820px; padding: 18px 22px; border: 1px solid #e9edf5; border-radius: 14px; background: #fff; box-shadow: 0 5px 18px rgba(35, 52, 91, .025); }

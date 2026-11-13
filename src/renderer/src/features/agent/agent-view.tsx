@@ -12,11 +12,33 @@ export function AgentView({ conversations, conversationId, activeConversation, b
   busy: boolean; status: string; proposal: AgentProposal | null; prompt: string
   overview: MailOverview | null; overviewLoading: boolean; overviewError: string; dark: boolean
   accountCount: number; messagesRef: React.RefObject<HTMLDivElement | null>
-  onClear: () => void; onSelectConversation: (id: string) => void; onLoadOverview: () => void
+  onClear: () => void; onSelectConversation: (id: string) => void; onLoadOverview: (force?: boolean) => void
   onOpenSource: (source: MailSummary) => void; onOpenDraft: (draft: MailDraft) => void
   onConfirm: (proposal: AgentProposal) => Promise<void>; onPrompt: (value: string) => void; onRun: () => void
   onCancel: () => void; onOpenLink?: (url: string) => void
 }): React.JSX.Element {
+  const chartRef = React.useRef<HTMLDivElement | null>(null)
+  const [chartKey, setChartKey] = React.useState(0)
+  React.useEffect(() => {
+    const target = chartRef.current
+    if (!target || typeof ResizeObserver === 'undefined') return
+    let timer = 0
+    let width = Math.round(target.getBoundingClientRect().width)
+    const observer = new ResizeObserver(() => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        const next = Math.round(target.getBoundingClientRect().width)
+        if (next === width) return
+        width = next
+        setChartKey((key) => key + 1)
+      }, 150)
+    })
+    observer.observe(target)
+    return () => {
+      observer.disconnect()
+      window.clearTimeout(timer)
+    }
+  }, [overview?.topics.length])
   return <section className="agent-layout">
     <div className="agent-history">
       <div className="agent-history-head"><span>对话记录</span><button onClick={onClear}
@@ -31,12 +53,12 @@ export function AgentView({ conversations, conversationId, activeConversation, b
       <div className="agent-messages" ref={messagesRef}>
         <div className="agent-overview">
           <div className="agent-overview-head"><strong>最近 30 天</strong>
-            <Button size="small" loading={overviewLoading} onClick={onLoadOverview}>刷新</Button></div>
+            <Button size="small" loading={overviewLoading} onClick={() => onLoadOverview(true)}>刷新</Button></div>
           {overviewLoading && !overview ? <div className="top-spinner"><Spin /></div> : overviewError ?
             <Alert type="error" message={overviewError} /> : overview && <>
               <div className="overview-metrics">
-                <div><span>收到</span><strong>{overview.sampled ? '至少 ' : ''}{overview.received}</strong><span>封</span></div>
-                <div><span>发出</span><strong>{overview.sampled ? '至少 ' : ''}{overview.sent}</strong><span>封</span></div>
+                <div><span>收到</span><strong>{overview.received}</strong><span>封</span></div>
+                <div><span>发出</span><strong>{overview.sent}</strong><span>封</span></div>
               </div>
               <div className="overview-people">
                 <div><h3>常见发件人</h3>{overview.topSenders.length ? overview.topSenders.map((item) =>
@@ -45,12 +67,11 @@ export function AgentView({ conversations, conversationId, activeConversation, b
                   <p key={item.address}>{item.address}<span>{item.count} 封</span></p>) : <span>暂无</span>}</div>
               </div>
               <div className="overview-chart"><h3>内容星图</h3>
-                {overview.topics.length ? <React.Suspense fallback={<div className="top-spinner"><Spin /></div>}>
-                  <RadarChart data={overview.topics} xField="name" yField="count"
+                {overview.topics.length ? <div ref={chartRef}><React.Suspense fallback={<div className="top-spinner"><Spin /></div>}>
+                  <RadarChart key={chartKey} data={overview.topics} xField="name" yField="count"
                     height={280} theme={dark ? 'classicDark' : 'classic'} />
-                </React.Suspense> : <Empty description="暂无主题分布" />}
+                </React.Suspense></div> : <Empty description="暂无主题分布" />}
               </div>
-              {overview.sampled && <div className="agent-warning">邮件数量超过检索上限，以上为抽样统计。</div>}
               {overview.warnings.map((warning, index) => <div key={index} className="agent-warning">{warning}</div>)}
             </>}
         </div>
