@@ -545,6 +545,7 @@ export interface AgentSearchFilters {
 
 export async function searchAgentMail(account: StoredAccount, filters: AgentSearchFilters): Promise<{
   matches: AgentMailRef[]; searchedFolders: string[]; truncated: boolean; warnings: string[]
+  counts: { inbox: number; sent: number }
 }> {
   return withImap(account, async (client) => {
     const folders = await client.list()
@@ -555,6 +556,7 @@ export async function searchAgentMail(account: StoredAccount, filters: AgentSear
     const matches: AgentMailRef[] = []
     const searchedFolders: string[] = []
     const warnings = sent ? [] : [`${account.address} 未找到已发送文件夹`]
+    const counts = { inbox: 0, sent: 0 }
     let truncated = false
     for (const path of paths) {
       try {
@@ -574,6 +576,7 @@ export async function searchAgentMail(account: StoredAccount, filters: AgentSear
             searchedFolders.push(path)
             continue
           }
+          counts[path === 'INBOX' ? 'inbox' : 'sent'] += found.length
           const selected = [...found].sort((a, b) => b - a).slice(0, 100)
           if (found.length > selected.length) truncated = true
           const messages = await client.fetchAll(selected, {
@@ -591,7 +594,7 @@ export async function searchAgentMail(account: StoredAccount, filters: AgentSear
         warnings.push(`${account.address} 的 ${path} 检索失败`)
       }
     }
-    return { matches, searchedFolders, truncated, warnings }
+    return { matches, searchedFolders, truncated, warnings, counts }
   })
 }
 

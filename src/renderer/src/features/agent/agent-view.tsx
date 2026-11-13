@@ -12,7 +12,7 @@ export function AgentView({ conversations, conversationId, activeConversation, b
   busy: boolean; status: string; proposal: AgentProposal | null; prompt: string
   overview: MailOverview | null; overviewLoading: boolean; overviewError: string; dark: boolean
   accountCount: number; messagesRef: React.RefObject<HTMLDivElement | null>
-  onClear: () => void; onSelectConversation: (id: string) => void; onLoadOverview: () => void
+  onClear: () => void; onSelectConversation: (id: string) => void; onLoadOverview: (force?: boolean) => void
   onOpenSource: (source: MailSummary) => void; onOpenDraft: (draft: MailDraft) => void
   onConfirm: (proposal: AgentProposal) => Promise<void>; onPrompt: (value: string) => void; onRun: () => void
   onCancel: () => void; onOpenLink?: (url: string) => void
@@ -31,12 +31,12 @@ export function AgentView({ conversations, conversationId, activeConversation, b
       <div className="agent-messages" ref={messagesRef}>
         <div className="agent-overview">
           <div className="agent-overview-head"><strong>最近 30 天</strong>
-            <Button size="small" loading={overviewLoading} onClick={onLoadOverview}>刷新</Button></div>
+            <Button size="small" loading={overviewLoading} onClick={() => onLoadOverview(true)}>刷新</Button></div>
           {overviewLoading && !overview ? <div className="top-spinner"><Spin /></div> : overviewError ?
             <Alert type="error" message={overviewError} /> : overview && <>
               <div className="overview-metrics">
-                <div><span>收到</span><strong>{overview.sampled ? '至少 ' : ''}{overview.received}</strong><span>封</span></div>
-                <div><span>发出</span><strong>{overview.sampled ? '至少 ' : ''}{overview.sent}</strong><span>封</span></div>
+                <div><span>收到</span><strong>{overview.received}</strong><span>封</span></div>
+                <div><span>发出</span><strong>{overview.sent}</strong><span>封</span></div>
               </div>
               <div className="overview-people">
                 <div><h3>常见发件人</h3>{overview.topSenders.length ? overview.topSenders.map((item) =>
@@ -50,7 +50,6 @@ export function AgentView({ conversations, conversationId, activeConversation, b
                     height={280} theme={dark ? 'classicDark' : 'classic'} />
                 </React.Suspense> : <Empty description="暂无主题分布" />}
               </div>
-              {overview.sampled && <div className="agent-warning">邮件数量超过检索上限，以上为抽样统计。</div>}
               {overview.warnings.map((warning, index) => <div key={index} className="agent-warning">{warning}</div>)}
             </>}
         </div>

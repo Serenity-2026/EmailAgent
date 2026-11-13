@@ -16,7 +16,13 @@ export function validateRpc(channel: string, args: unknown[]): void {
   switch (channel) {
     case 'auth:bootstrap-status': case 'auth:session': case 'auth:logout': case 'accounts:list': case 'ai:settings:get': case 'ai:settings:test':
     case 'ai:digest:history': case 'drafts:list':
-    case 'agent:history': case 'agent:overview': case 'agent:clear': case 'theme:get': valid = args.length === 0; break
+    case 'agent:history': case 'agent:clear': case 'theme:get': valid = args.length === 0; break
+    case 'agent:overview': {
+      const options = args[0]
+      valid = args.length === 0 || (args.length === 1 && object(options) &&
+        (options.force === undefined || typeof options.force === 'boolean'))
+      break
+    }
     case 'auth:bootstrap': case 'auth:login': case 'auth:create': case 'auth:password': case 'ai:models':
       valid = args.length === 2 && args.every((value) => string(value)); break
     case 'accounts:remove': case 'accounts:health': case 'mail:folders': case 'mail:sent-folder': case 'drafts:remove':

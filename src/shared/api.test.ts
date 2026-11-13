@@ -41,6 +41,13 @@ describe('RPC request validation', () => {
     expect(() => validateRpc('ai:digest', [Array.from({ length: 101 }, () => 'account')])).toThrow('请求参数无效')
   })
 
+  it('accepts an optional overview refresh flag', () => {
+    expect(() => validateRpc('agent:overview', [])).not.toThrow()
+    expect(() => validateRpc('agent:overview', [{ force: true }])).not.toThrow()
+    expect(() => validateRpc('agent:overview', [{ force: 'yes' }])).toThrow('请求参数无效')
+    expect(() => validateRpc('agent:overview', [{}, 'extra'])).toThrow('请求参数无效')
+  })
+
   it('accepts a reply identity only when all nested values are valid', () => {
     const draft = { accountId: 'account', to: ['one@example.com'], cc: [], bcc: [], subject: '回复', text: '正文',
       replyTo: { uid: 7, folder: 'INBOX', uidValidity: '22' } }

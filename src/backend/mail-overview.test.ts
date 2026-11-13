@@ -24,7 +24,7 @@ describe('recent mailbox overview', () => {
       mail(1, 'INBOX', '老师 <teacher@example.com>'),
       mail(2, 'INBOX', 'teacher@example.com'),
       mail(3, 'Sent', 'student@qq.com', ['classmate@example.com'])
-    ], searchedFolders: ['INBOX', 'Sent'], truncated: false, warnings: [] })
+    ], searchedFolders: ['INBOX', 'Sent'], truncated: false, warnings: [], counts: { inbox: 2, sent: 1 } })
     vi.mocked(readAgentMailBatch).mockImplementation(async (_account, refs) => refs.map((ref) => ({ mail: ref, text: '课程报告' })))
     vi.mocked(complete).mockResolvedValue('{"topics":[{"name":"课程","mailNumbers":[1,2]},{"name":"通知","mailNumbers":[]},{"name":"其他","mailNumbers":[3]}]}')
     const overview = await getMailOverview([account], settings)
@@ -38,17 +38,19 @@ describe('recent mailbox overview', () => {
 
   it('keeps counts available without AI and labels capped searches as sampled', async () => {
     vi.mocked(searchAgentMail).mockResolvedValue({ matches: [mail(1, 'INBOX', 'teacher@example.com')],
-      searchedFolders: ['INBOX'], truncated: true, warnings: [] })
+      searchedFolders: ['INBOX'], truncated: true, warnings: [], counts: { inbox: 123, sent: 2 } })
     const overview = await getMailOverview([account], { ...settings, apiKey: '' })
     expect(overview.sampled).toBe(true)
-    expect(overview.received).toBe(1)
+    expect(overview.received).toBe(123)
+    expect(overview.sent).toBe(2)
+    expect(overview.topSenders).toEqual([{ address: 'teacher@example.com', count: 1 }])
     expect(overview.topics).toEqual([])
     expect(complete).not.toHaveBeenCalled()
   })
 
   it('returns an empty overview when no recent mail matches', async () => {
     vi.mocked(searchAgentMail).mockResolvedValue({ matches: [], searchedFolders: ['INBOX', 'Sent'],
-      truncated: false, warnings: [] })
+      truncated: false, warnings: [], counts: { inbox: 0, sent: 0 } })
     const overview = await getMailOverview([account], settings)
     expect(overview.received).toBe(0)
     expect(overview.sent).toBe(0)
@@ -64,7 +66,7 @@ describe('recent mailbox overview', () => {
   it('does not return overview data after logout during model analysis', async () => {
     let active = true
     vi.mocked(searchAgentMail).mockResolvedValue({ matches: [mail(1, 'INBOX', 'teacher@example.com')],
-      searchedFolders: ['INBOX'], truncated: false, warnings: [] })
+      searchedFolders: ['INBOX'], truncated: false, warnings: [], counts: { inbox: 1, sent: 0 } })
     vi.mocked(readAgentMailBatch).mockResolvedValue([{ mail: mail(1, 'INBOX', 'teacher@example.com'), text: '报告' }])
     vi.mocked(complete).mockImplementation(async () => { active = false; return '{"topics":[]}' })
     await expect(getMailOverview([account], settings, () => {
