@@ -42,4 +42,17 @@ describe('digest history view', () => {
     expect(retry).toHaveBeenCalledOnce()
     await act(async () => root.unmount())
   })
+
+  it('renders the AI summary as markdown instead of raw text', async () => {
+    const root = createRoot(container)
+    await act(async () => root.render(<DigestView digest={{
+      ...digest, content: '## 总体概览\n\n共 **2 封** 邮件。\n\n- 第一项\n- 第二项'
+    }} history={[]} loading={false} error="" onSelect={() => undefined} onRetry={() => undefined}
+    onOpenSource={() => undefined} />))
+    expect(container.querySelector('.digest-body h2')?.textContent).toBe('总体概览')
+    expect(container.querySelector('.digest-body strong')?.textContent).toBe('2 封')
+    expect(container.querySelectorAll('li')).toHaveLength(2)
+    expect(container.textContent).not.toContain('##')
+    await act(async () => root.unmount())
+  })
 })

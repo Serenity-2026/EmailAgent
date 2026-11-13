@@ -29,6 +29,16 @@
 :root[data-theme='dark'] .reader-meta strong, :root[data-theme='dark'] .recovery-card h1,
 :root[data-theme='dark'] .agent-proposal strong { color: #e1e8f5; }
 :root[data-theme='dark'] .reader-divider { background: #2b3850; }
+:root[data-theme='dark'] .markdown-body h1, :root[data-theme='dark'] .markdown-body h2,
+:root[data-theme='dark'] .markdown-body h3, :root[data-theme='dark'] .markdown-body h4,
+:root[data-theme='dark'] .markdown-body strong { color: #eef2fb; }
+:root[data-theme='dark'] .markdown-body a { color: #9db9ff; }
+:root[data-theme='dark'] .markdown-body code { background: #22304a; }
+:root[data-theme='dark'] .markdown-body pre { background: #1b2740; }
+:root[data-theme='dark'] .markdown-body blockquote { border-color: #354866; color: #9aabc6; }
+:root[data-theme='dark'] .markdown-body th, :root[data-theme='dark'] .markdown-body td { border-color: #354866; }
+:root[data-theme='dark'] .markdown-body th { background: #22304a; }
+:root[data-theme='dark'] .markdown-body hr { background: #2b3850; }
 :root[data-theme='dark'] .agent-history, :root[data-theme='dark'] .agent-compose { border-color: #2b3850; }
 :root[data-theme='dark'] .agent-sources button, :root[data-theme='dark'] .source-row,
 :root[data-theme='dark'] .compose-preview { background: #24334d; border-color: #354866; color: #b3c9ff; }

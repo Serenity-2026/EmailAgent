@@ -11,7 +11,8 @@
 .agent-overview-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; color: #34435f; }
 .agent-message { max-width: 820px; padding: 18px 22px; border: 1px solid #e9edf5; border-radius: 14px; background: #fff; box-shadow: 0 5px 18px rgba(35, 52, 91, .025); }
 .agent-message.user { justify-self: end; max-width: min(82%, 650px); background: #e9f0ff; border-color: #dce7ff; }
-.agent-message-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.agent-message-text { overflow-wrap: anywhere; line-height: 1.7; }
+.agent-message-text.is-plain { white-space: pre-wrap; }
 .agent-inline-source { padding: 0 2px; border: 0; background: transparent; color: #315dbb; font: inherit; font-weight: 700; cursor: pointer; }
 .agent-inline-source:hover { text-decoration: underline; }
 .agent-scope, .agent-limit, .agent-warning, .agent-action-ok { margin-top: 10px; font-size: 12px; line-height: 1.5; }
