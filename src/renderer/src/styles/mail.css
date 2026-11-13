@@ -10,10 +10,10 @@
 .mail-search-quick .ant-input { min-width: 0; padding: 4px 2px; background: transparent; font-size: 13px; outline: none; box-shadow: none; }
 .mail-search-quick .ant-input:focus, .mail-search-quick .ant-input:focus-visible { outline: none; box-shadow: none; }
 .mail-search-quick svg { flex: none; color: var(--faint); }
-.filter-toggle { display: inline-flex; flex: none; align-items: center; gap: 5px; white-space: nowrap; padding: 5px 7px; border: 1px solid transparent; border-radius: 2px; background: none; color: var(--muted); font-size: 12px; cursor: pointer; }
+.filter-toggle { display: inline-flex; flex: none; align-items: center; gap: 5px; white-space: nowrap; padding: 5px 7px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--muted); font-size: 12px; cursor: pointer; }
 .filter-toggle:hover { color: var(--ink); }
 .filter-toggle.is-open { border-color: var(--accent); color: var(--accent); }
-.mail-filters { display: none; position: absolute; top: calc(100% - 6px); left: 12px; right: 12px; z-index: 8; padding: 14px; background: var(--surface); border: 1px solid var(--rule); box-shadow: 0 18px 36px rgba(24, 21, 14, .14); }
+.mail-filters { display: none; position: absolute; top: calc(100% - 6px); left: 12px; right: 12px; z-index: 8; padding: 14px; background: var(--surface); border: 1px solid var(--rule); box-shadow: 0 18px 36px rgba(24, 21, 14, .14); border-radius: 10px; }
 .mail-filters.is-open { display: grid; gap: 9px; }
 .filter-field { display: grid; gap: 4px; color: var(--faint); font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em; }
 .mail-search-row { display: flex; gap: 7px; }
@@ -22,11 +22,11 @@
 .mail-search-actions .ant-btn { flex: 1; }
 .mail-search-actions .ant-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 
-.mail-list > .ant-alert { margin: 8px 14px; padding: 6px 10px; font-size: 12px; border-radius: 2px; }
+.mail-list > .ant-alert { margin: 8px 14px; padding: 6px 10px; font-size: 12px; border-radius: 6px; }
 .mail-load-more { display: flex; justify-content: center; padding: 16px; }
 .mail-row { display: grid; grid-template-columns: 42px 6px minmax(0, 1fr); column-gap: 9px; align-items: start; width: 100%; padding: 10px 18px 10px 12px; border: 0; border-bottom: 1px solid var(--row-rule); background: transparent; text-align: left; cursor: pointer; }
 .mail-row:hover { background: var(--hover); }
-.mail-row.selected { background: var(--selected); box-shadow: inset 2px 0 var(--accent); }
+.mail-row.selected { border-radius: 6px; background: var(--selected); box-shadow: inset 2px 0 var(--accent); }
 .mail-row-date { padding-top: 2px; color: var(--faint); font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .01em; white-space: nowrap; }
 .mail-dot { width: 6px; height: 6px; margin-top: 6px; border-radius: 50%; background: var(--mark); }
 .mail-dot.is-read { background: transparent; }
@@ -50,9 +50,9 @@
 .reader-divider { height: 1px; margin: 20px 0 24px; background: var(--rule); }
 .mail-body, .digest-body { overflow-wrap: anywhere; color: var(--ink-soft); font-size: 15px; line-height: 1.85; }
 .mail-body { max-width: 38em; white-space: pre-wrap; }
-.mail-rich-body { max-width: 720px; margin: 6px auto 0; border: 1px solid var(--rule); background: #fff; box-shadow: 0 10px 28px rgba(26, 25, 21, 0.06); }
+.mail-rich-body { max-width: 720px; margin: 6px auto 0; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: #fff; box-shadow: 0 10px 28px rgba(26, 25, 21, 0.06); }
 .mail-rich-body iframe { display: block; width: 100%; min-height: 120px; border: 0; background: #fff; }
-.remote-images-note { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 2px; background: var(--surface); color: var(--muted); font-size: 12px; }
+.remote-images-note { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); color: var(--muted); font-size: 12px; }
 .reader-actions { display: flex; gap: 8px; margin-top: 30px; }
 .empty-pane { display: grid; place-items: center; min-height: 100%; color: var(--faint); }
 

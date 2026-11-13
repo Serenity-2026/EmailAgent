@@ -41,7 +41,7 @@ button { color: inherit; }
 .brand .brand-word span { color: var(--accent); }
 .sidebar-label { margin: 26px 12px 10px; color: var(--faint); font-family: var(--font-mono); font-size: 10.5px; font-weight: 500; letter-spacing: .14em; }
 .sidebar-note { padding: 6px 12px; color: var(--faint); font-size: 12px; }
-.nav-item, .account-item { display: flex; flex: none; width: 100%; align-items: center; gap: 9px; min-height: 33px; margin-bottom: 1px; padding: 7px 11px; border: 0; border-radius: 2px; background: transparent; color: var(--ink-soft); text-align: left; font-size: 13px; font-weight: 450; cursor: pointer; }
+.nav-item, .account-item { display: flex; flex: none; width: 100%; align-items: center; gap: 9px; min-height: 33px; margin-bottom: 1px; padding: 7px 11px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-soft); text-align: left; font-size: 13px; font-weight: 450; cursor: pointer; }
 .nav-item svg, .account-item svg { flex: none; opacity: .75; }
 .nav-item:hover, .account-item:hover { background: var(--hover); color: var(--ink); }
 .nav-item.active, .account-item.active { background: var(--selected); color: var(--ink); font-weight: 600; box-shadow: inset 2px 0 var(--accent); }
@@ -50,9 +50,9 @@ button { color: inherit; }
 .account-item { overflow: hidden; white-space: nowrap; }
 .account-item span { overflow: hidden; text-overflow: ellipsis; }
 .sidebar-bottom { flex: none; margin-top: auto; padding-top: 20px; }
-.account-trigger { display: flex; width: 100%; align-items: center; gap: 9px; padding: 6px 8px; border: 0; border-radius: 2px; background: transparent; color: var(--ink-soft); text-align: left; font-size: 12.5px; cursor: pointer; }
+.account-trigger { display: flex; width: 100%; align-items: center; gap: 9px; padding: 6px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-soft); text-align: left; font-size: 12.5px; cursor: pointer; }
 .account-trigger:hover { background: var(--hover); color: var(--ink); }
-.account-avatar { display: grid; flex: none; place-items: center; width: 24px; height: 24px; border-radius: 3px; background: var(--ink); color: var(--paper); font-family: var(--font-serif); font-size: 12px; }
+.account-avatar { display: grid; flex: none; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: var(--ink); color: var(--paper); font-family: var(--font-serif); font-size: 12px; }
 
 .workspace { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; background: var(--paper); }
 .topbar { flex: none; min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 28px; background: var(--paper); border-bottom: 1px solid var(--rule); }
@@ -67,7 +67,7 @@ button { color: inherit; }
 .top-spinner { display: flex; justify-content: center; padding: 40px; }
 
 .launch-screen, .recovery-shell { display: grid; place-items: center; width: 100%; height: 100dvh; background: var(--paper); }
-.recovery-card { width: min(420px, calc(100vw - 40px)); padding: 34px; background: var(--surface); border: 1px solid var(--rule); border-radius: 2px; }
+.recovery-card { width: min(420px, calc(100vw - 40px)); padding: 34px; background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; }
 .recovery-card .brand { padding: 0 0 24px; }
 .recovery-card h1 { margin: 0 0 10px; font-family: var(--font-serif); font-size: 22px; font-weight: 600; }
 .recovery-card p { margin: 0 0 22px; color: var(--muted); font-size: 12.5px; line-height: 1.75; }
@@ -87,12 +87,14 @@ button { color: inherit; }
 .markdown-body strong { color: var(--ink); }
 .markdown-body a { color: var(--accent); text-decoration: none; text-underline-offset: 3px; }
 .markdown-body a:hover { text-decoration: underline; }
-.markdown-body code { padding: 1px 5px; border-radius: 2px; background: var(--surface-2); font-family: var(--font-mono); font-size: 12px; }
-.markdown-body pre { margin: 0 0 10px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 2px; overflow-x: auto; background: var(--surface); }
+.markdown-body code { padding: 1px 5px; border-radius: 4px; background: var(--surface-2); font-family: var(--font-mono); font-size: 12px; }
+.markdown-body pre { margin: 0 0 10px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 8px; overflow-x: auto; background: var(--surface); }
 .markdown-body pre code { padding: 0; background: transparent; }
 .markdown-body blockquote { padding-left: 12px; border-left: 2px solid var(--rule); color: var(--muted); }
-.markdown-body table { border-collapse: collapse; }
-.markdown-body th, .markdown-body td { border: 1px solid var(--rule); padding: 6px 10px; text-align: left; }
+.markdown-body table { border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; border-collapse: separate; border-spacing: 0; }
+.markdown-body th, .markdown-body td { border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding: 6px 10px; text-align: left; }
+.markdown-body th:last-child, .markdown-body td:last-child { border-right: 0; }
+.markdown-body tr:last-child td { border-bottom: 0; }
 .markdown-body th { background: var(--surface); font-weight: 600; }
 .markdown-body hr { border: 0; height: 1px; margin: 18px 0; background: var(--rule); }
 
