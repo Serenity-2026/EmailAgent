@@ -32,6 +32,7 @@ export function validateRpc(channel: string, args: unknown[]): void {
         (args.length === 2 || (object(options) &&
           (options.cursor === undefined || string(options.cursor, 1000)) &&
           (options.limit === undefined || (Number.isInteger(options.limit) && Number(options.limit) >= 1 && Number(options.limit) <= 50)) &&
+          (options.force === undefined || typeof options.force === 'boolean') &&
           (query === undefined || (object(query) &&
             (query.subject === undefined || string(query.subject, 200)) &&
             (query.from === undefined || string(query.from, 200)) &&

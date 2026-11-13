@@ -11,12 +11,13 @@ vi.mock('./ai', () => ({
 vi.mock('./mail-overview', () => ({ getMailOverview: vi.fn() }))
 vi.mock('./mail', () => ({
   executeAgentAction: vi.fn(), getMail: vi.fn(), getMailAttachment: vi.fn(), getSentFolder: vi.fn(), listMail: vi.fn(),
-  inspectAccountHealth: vi.fn(), listMailFolders: vi.fn(), sendMail: vi.fn(), testAccount: vi.fn(), todayMail: vi.fn()
+  listMailCached: vi.fn(), inspectAccountHealth: vi.fn(), listMailFolders: vi.fn(), sendMail: vi.fn(),
+  testAccount: vi.fn(), todayMail: vi.fn()
 }))
 
 import { runAgentTask } from './agent'
 import { generateDigest } from './ai'
-import { getMail, getMailAttachment, inspectAccountHealth, listMail, testAccount, todayMail } from './mail'
+import { getMail, getMailAttachment, inspectAccountHealth, listMailCached, testAccount, todayMail } from './mail'
 import { BackendContext } from './service'
 
 const account: StoredAccount = {
@@ -85,7 +86,7 @@ describe('BackendContext Agent concurrency', () => {
   it('keeps mail list and detail reads responsive while an Agent job is running', async () => {
     const { context } = contextWithHistory()
     const ready = blockedAgent('planning')
-    vi.mocked(listMail).mockResolvedValue({ messages: [], truncated: false, warnings: [] })
+    vi.mocked(listMailCached).mockResolvedValue({ messages: [], truncated: false, warnings: [] })
     vi.mocked(getMail).mockResolvedValue({
       uid: 7, accountId: account.id, folder: 'INBOX', uidValidity: '1', from: 'teacher@example.com',
       subject: '课程', date: new Date().toISOString(), unread: false, to: '', text: '正文', html: '',

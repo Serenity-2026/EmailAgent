@@ -6,6 +6,7 @@ import type {
   MailSearchQuery, MailSummary
 } from '../shared/models'
 import { attachmentDownloadReason, sanitizeAttachmentFilename } from '../shared/attachments'
+import { mailListCache, type MailboxSnapshot, type MailListEntry } from './mail-cache'
 import { PROVIDERS, validateRecipients } from './providers'
 import type { StoredAccount } from '../shared/vault'
 
@@ -205,45 +206,159 @@ function searchCriteria(query: MailSearchQuery): Record<string, unknown> {
   }
 }
 
+interface ListPageResult {
+  page: MailPage
+  state: MailboxSnapshot
+}
+
+function mailboxSnapshot(client: ImapFlow): MailboxSnapshot {
+  const mailbox = client.mailbox
+  if (!mailbox) throw new Error('邮箱文件夹缺少 UIDVALIDITY')
+  return {
+    uidValidity: mailbox.uidValidity.toString(),
+    uidNext: mailbox.uidNext,
+    messages: mailbox.exists,
+    ...(mailbox.highestModseq === undefined ? {} : { modseq: mailbox.highestModseq.toString() })
+  }
+}
+
+async function readListPage(client: ImapFlow, account: StoredAccount, folder: string,
+  options: MailListOptions): Promise<ListPageResult> {
+  const lock = await client.getMailboxLock(folder, { readOnly: true })
+  try {
+    const state = mailboxSnapshot(client)
+    if (!state.uidValidity) throw new Error('邮箱文件夹缺少 UIDVALIDITY')
+    const { uidValidity } = state
+    const query = normalizedQuery(options.query)
+    const queryKey = JSON.stringify(query)
+    const cursor = options.cursor ? parseCursor(options.cursor, folder, uidValidity, queryKey) : undefined
+    const found = await client.search(searchCriteria(query) as Parameters<ImapFlow['search']>[0], { uid: true })
+    if (!Array.isArray(found) || !found.length) return { page: { messages: [], truncated: false, warnings: [] }, state }
+    const descending = [...new Set(found)].sort((left, right) => right - left)
+    const available = descending.filter((uid) => !cursor || uid < cursor.beforeUid)
+    const searching = Object.keys(query).length > 0
+    const limit = Math.min(MAIL_PAGE_SIZE, options.limit || MAIL_PAGE_SIZE)
+    const budget = cursor?.remaining ?? (searching ? MAX_SEARCH_RESULTS : undefined)
+    const pageSize = Math.min(limit, budget ?? limit)
+    const selected = available.slice(0, pageSize)
+    if (!selected.length) return { page: { messages: [], truncated: cursor?.truncated || false, warnings: [] }, state }
+    const fetched = await client.fetchAll(selected, {
+      uid: true,
+      envelope: true,
+      flags: true,
+      internalDate: true
+    }, { uid: true })
+    const byUid = new Map(fetched.map((message) => [message.uid, summaryOf(account, folder, message)]))
+    const messages = selected.flatMap((uid) => byUid.get(uid) ? [byUid.get(uid)!] : [])
+    const remaining = budget === undefined ? undefined : budget - selected.length
+    const truncated = cursor?.truncated || (searching && descending.length > MAX_SEARCH_RESULTS)
+    const hasMore = available.length > selected.length && (remaining === undefined || remaining > 0)
+    const nextCursor = hasMore ? cursorText({
+      version: 1, folder, uidValidity, beforeUid: selected[selected.length - 1], queryKey,
+      ...(remaining === undefined ? {} : { remaining }), truncated
+    }) : undefined
+    const warnings = fetched.length === selected.length ? [] : ['部分邮件在加载期间被移动或删除，请刷新确认最新列表']
+    return { page: { messages, ...(nextCursor ? { nextCursor } : {}), truncated, warnings }, state }
+  } finally {
+    lock.release()
+  }
+}
+
 export async function listMail(account: StoredAccount, folder: string, options: MailListOptions = {}): Promise<MailPage> {
-  return withImap(account, async (client) => {
-    const lock = await client.getMailboxLock(folder, { readOnly: true })
-    try {
-      const uidValidity = client.mailbox && client.mailbox.uidValidity.toString()
-      if (!uidValidity) throw new Error('邮箱文件夹缺少 UIDVALIDITY')
-      const query = normalizedQuery(options.query)
-      const queryKey = JSON.stringify(query)
-      const cursor = options.cursor ? parseCursor(options.cursor, folder, uidValidity, queryKey) : undefined
-      const found = await client.search(searchCriteria(query) as Parameters<ImapFlow['search']>[0], { uid: true })
-      if (!Array.isArray(found) || !found.length) return { messages: [], truncated: false, warnings: [] }
-      const descending = [...new Set(found)].sort((left, right) => right - left)
-      const available = descending.filter((uid) => !cursor || uid < cursor.beforeUid)
-      const searching = Object.keys(query).length > 0
-      const limit = Math.min(MAIL_PAGE_SIZE, options.limit || MAIL_PAGE_SIZE)
-      const budget = cursor?.remaining ?? (searching ? MAX_SEARCH_RESULTS : undefined)
-      const pageSize = Math.min(limit, budget ?? limit)
-      const selected = available.slice(0, pageSize)
-      if (!selected.length) return { messages: [], truncated: cursor?.truncated || false, warnings: [] }
-      const fetched = await client.fetchAll(selected, {
-        uid: true,
-        envelope: true,
-        flags: true,
-        internalDate: true
-      }, { uid: true })
-      const byUid = new Map(fetched.map((message) => [message.uid, summaryOf(account, folder, message)]))
-      const messages = selected.flatMap((uid) => byUid.get(uid) ? [byUid.get(uid)!] : [])
-      const remaining = budget === undefined ? undefined : budget - selected.length
-      const truncated = cursor?.truncated || (searching && descending.length > MAX_SEARCH_RESULTS)
-      const hasMore = available.length > selected.length && (remaining === undefined || remaining > 0)
-      const nextCursor = hasMore ? cursorText({
-        version: 1, folder, uidValidity, beforeUid: selected[selected.length - 1], queryKey,
-        ...(remaining === undefined ? {} : { remaining }), truncated
-      }) : undefined
-      const warnings = fetched.length === selected.length ? [] : ['部分邮件在加载期间被移动或删除，请刷新确认最新列表']
-      return { messages, ...(nextCursor ? { nextCursor } : {}), truncated, warnings }
-    } finally {
-      lock.release()
+  return withImap(account, async (client) => (await readListPage(client, account, folder, options)).page)
+}
+
+function cacheQueryKey(query: MailSearchQuery, limit: number): string {
+  return JSON.stringify({ query, limit })
+}
+
+async function statusSnapshot(client: ImapFlow, folder: string): Promise<MailboxSnapshot | undefined> {
+  try {
+    const status = await client.status(folder, {
+      uidValidity: true, uidNext: true, messages: true, highestModseq: true
+    })
+    if (!status || status.uidValidity === undefined || status.uidNext === undefined || status.messages === undefined) {
+      return undefined
     }
+    return {
+      uidValidity: status.uidValidity.toString(),
+      uidNext: status.uidNext,
+      messages: status.messages,
+      ...(status.highestModseq === undefined ? {} : { modseq: status.highestModseq.toString() })
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 判断服务器端的文件夹状态是否与快照一致。服务器支持 CONDSTORE 时用 HIGHESTMODSEQ 判等，
+ * 否则退回「UIDNEXT + 邮件数」判等——两者都没变说明没有新邮件、也没有邮件被移走。
+ */
+function mailboxUnchanged(cached: MailboxSnapshot, current: MailboxSnapshot): boolean {
+  if (cached.uidValidity !== current.uidValidity) return false
+  if (cached.modseq !== undefined && current.modseq !== undefined) return cached.modseq === current.modseq
+  return cached.uidNext === current.uidNext && cached.messages === current.messages
+}
+
+/** 只补拉新到的 UID，拼到快照第一页前面，避免为新邮件重读整页。 */
+async function extendFirstPage(client: ImapFlow, account: StoredAccount, folder: string, cached: MailListEntry,
+  limit: number): Promise<ListPageResult | undefined> {
+  const lock = await client.getMailboxLock(folder, { readOnly: true })
+  try {
+    const state = mailboxSnapshot(client)
+    if (state.uidValidity !== cached.state.uidValidity || state.uidNext <= cached.state.uidNext ||
+      state.messages <= cached.state.messages || state.uidNext - cached.state.uidNext > limit) return undefined
+    const uids: number[] = []
+    for (let uid = cached.state.uidNext; uid < state.uidNext; uid++) uids.push(uid)
+    const fetched = await client.fetchAll(uids, { uid: true, envelope: true, flags: true, internalDate: true }, { uid: true })
+    const byUid = new Map(fetched.map((message) => [message.uid, summaryOf(account, folder, message)]))
+    const fresh = uids.flatMap((uid) => byUid.get(uid) ? [byUid.get(uid)!] : [])
+    if (!fresh.length) return undefined
+    const seen = new Set<number>()
+    const messages = [...fresh, ...cached.page.messages].filter((message) => {
+      if (seen.has(message.uid)) return false
+      seen.add(message.uid)
+      return true
+    }).slice(0, limit)
+    const lastUid = messages[messages.length - 1]?.uid
+    const hasMore = lastUid !== undefined && state.messages > messages.length
+    const nextCursor = hasMore ? cursorText({
+      version: 1, folder, uidValidity: state.uidValidity, beforeUid: lastUid, queryKey: JSON.stringify({}), truncated: false
+    }) : undefined
+    return { page: { messages, ...(nextCursor ? { nextCursor } : {}), truncated: false, warnings: [] }, state }
+  } finally {
+    lock.release()
+  }
+}
+
+/**
+ * 带缓存的第一页列表：先 STATUS 比对快照，未变化直接返回；只有新邮件时增量合并；
+ * 文件夹换了（UIDVALIDITY 变化）、邮件被移走或带查询条件时重读整页。
+ * 翻页（cursor）请求不经过缓存，每次读取最新状态。
+ */
+export async function listMailCached(scope: string, account: StoredAccount, folder: string,
+  options: MailListOptions = {}): Promise<MailPage> {
+  if (options.cursor) return listMail(account, folder, options)
+  const query = normalizedQuery(options.query)
+  const limit = Math.min(MAIL_PAGE_SIZE, options.limit || MAIL_PAGE_SIZE)
+  const queryKey = cacheQueryKey(query, limit)
+  const cached = options.force ? undefined : mailListCache.get(scope, account.id, folder, queryKey)
+  return withImap(account, async (client) => {
+    if (cached) {
+      const current = await statusSnapshot(client, folder)
+      if (current && mailboxUnchanged(cached.state, current)) return cached.page
+      if (current && !Object.keys(query).length) {
+        const extended = await extendFirstPage(client, account, folder, cached, limit)
+        if (extended) {
+          mailListCache.set(scope, account.id, folder, queryKey, extended.state, extended.page)
+          return extended.page
+        }
+      }
+    }
+    const { page, state } = await readListPage(client, account, folder, { ...options, cursor: undefined, limit })
+    mailListCache.set(scope, account.id, folder, queryKey, state, page)
+    return page
   })
 }
 

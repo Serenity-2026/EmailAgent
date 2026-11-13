@@ -3,7 +3,8 @@ import type { AgentAction, AgentMailRef } from '../shared/models'
 import type { StoredAccount } from '../shared/vault'
 
 const state = vi.hoisted(() => ({
-  uidValidity: 55n, archive: false, exists: true, calls: [] as string[], searchCount: 0,
+  uidValidity: 55n, uidNext: 1, messages: 0, highestModseq: undefined as bigint | undefined,
+  archive: false, exists: true, calls: [] as string[], searchCount: 0,
   connectionError: false, smtpError: false,
   sourceSize: 100, missingSourceUids: new Set<number>(), missingMetadataUids: new Set<number>(),
   sourceContent: null as Buffer | null,
@@ -14,7 +15,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock('imapflow', () => ({
   ImapFlow: class {
-    mailbox: { uidValidity: bigint } | false = false
+    mailbox: { uidValidity: bigint; uidNext?: number; exists?: number; highestModseq?: bigint } | false = false
     private errorListener?: (error: Error) => void
     on(event: string, listener: (error: Error) => void): this {
       if (event === 'error') this.errorListener = listener
@@ -39,8 +40,20 @@ vi.mock('imapflow', () => ({
     }
     async getMailboxLock(path: string, options?: { readOnly?: boolean }): Promise<{ release: () => void }> {
       state.calls.push(`lock:${path}:${Boolean(options?.readOnly)}`)
-      this.mailbox = { uidValidity: state.uidValidity }
+      this.mailbox = {
+        uidValidity: state.uidValidity,
+        uidNext: state.uidNext,
+        exists: state.messages,
+        ...(state.highestModseq === undefined ? {} : { highestModseq: state.highestModseq })
+      }
       return { release: () => state.calls.push('release') }
+    }
+    async status(): Promise<Record<string, unknown>> {
+      state.calls.push('status')
+      return {
+        path: 'INBOX', messages: state.messages, uidNext: state.uidNext, uidValidity: state.uidValidity,
+        ...(state.highestModseq === undefined ? {} : { highestModseq: state.highestModseq })
+      }
     }
     async fetchOne(uid = 7, query: { source?: boolean } = {}): Promise<false | Record<string, unknown>> {
       state.calls.push(`fetchOne:${uid}:${query.source ? 'source' : 'metadata'}`)
@@ -78,9 +91,10 @@ vi.mock('nodemailer', () => ({ default: { createTransport: () => ({
 }) } }))
 
 import {
-  executeAgentAction, getMail, getMailAttachment, inspectAccountHealth, listMail, listMailFolders, MAX_INTERACTIVE_MAIL_BYTES,
-  readAgentMailBatch, searchAgentMail, sendMail, testAccount, todayMail
+  executeAgentAction, getMail, getMailAttachment, inspectAccountHealth, listMail, listMailCached, listMailFolders,
+  MAX_INTERACTIVE_MAIL_BYTES, readAgentMailBatch, searchAgentMail, sendMail, testAccount, todayMail
 } from './mail'
+import { mailListCache } from './mail-cache'
 
 const account: StoredAccount = { id: 'one', provider: 'qq', address: 'student@qq.com', authorizationCode: 'example' }
 const mail: AgentMailRef = {
@@ -90,6 +104,9 @@ const mail: AgentMailRef = {
 
 beforeEach(() => {
   state.uidValidity = 55n
+  state.uidNext = 1
+  state.messages = 0
+  state.highestModseq = undefined
   state.archive = false
   state.exists = true
   state.searchCount = 0
@@ -103,6 +120,7 @@ beforeEach(() => {
   state.folders = []
   state.sentMessages = []
   state.calls = []
+  mailListCache.clear()
 })
 
 describe('account connectivity', () => {
@@ -327,5 +345,115 @@ describe('Agent IMAP access', () => {
     state.archive = true
     await executeAgentAction(account, { kind: 'archive', mail })
     expect(state.calls).toContain('archive')
+  })
+})
+
+describe('mail list snapshot cache', () => {
+  it('serves the cached page without searching again when STATUS reports no change', async () => {
+    state.messages = 3
+    state.uidNext = 4
+    state.searchCount = 3
+    const first = await listMailCached('user', account, 'INBOX')
+    expect(first.messages.map((item) => item.uid)).toEqual([3, 2, 1])
+    state.calls = []
+    const second = await listMailCached('user', account, 'INBOX')
+    expect(second).toEqual(first)
+    expect(state.searchQueries).toHaveLength(1)
+    expect(state.calls).toContain('status')
+  })
+
+  it('fetches only newly arrived UIDs and puts them in front of the cached page', async () => {
+    state.messages = 3
+    state.uidNext = 4
+    state.searchCount = 3
+    await listMailCached('user', account, 'INBOX')
+    state.messages = 4
+    state.uidNext = 5
+    state.searchCount = 4
+    state.calls = []
+    const page = await listMailCached('user', account, 'INBOX')
+    expect(page.messages.map((item) => item.uid)).toEqual([4, 3, 2, 1])
+    expect(state.calls).toContain('fetchAll:1')
+    expect(state.searchQueries).toHaveLength(1)
+  })
+
+  it('keeps paging consistent when new mail arrives before the first page fills', async () => {
+    state.messages = 60
+    state.uidNext = 61
+    state.searchCount = 60
+    const first = await listMailCached('user', account, 'INBOX')
+    expect(first.messages[0].uid).toBe(60)
+    expect(first.messages.at(-1)?.uid).toBe(11)
+    state.messages = 61
+    state.uidNext = 62
+    state.searchCount = 61
+    const extended = await listMailCached('user', account, 'INBOX')
+    expect(extended.messages[0].uid).toBe(61)
+    expect(extended.messages.at(-1)?.uid).toBe(12)
+    expect(extended.messages).toHaveLength(50)
+    const second = await listMail(account, 'INBOX', { cursor: extended.nextCursor })
+    expect(second.messages[0].uid).toBe(11)
+    expect(second.messages).toHaveLength(11)
+  })
+
+  it('reloads the whole page when UIDVALIDITY changes', async () => {
+    state.messages = 3
+    state.uidNext = 4
+    state.searchCount = 3
+    await listMailCached('user', account, 'INBOX')
+    state.uidValidity = 56n
+    await listMailCached('user', account, 'INBOX')
+    expect(state.searchQueries).toHaveLength(2)
+  })
+
+  it('never extends a filtered list, only full first pages', async () => {
+    state.messages = 3
+    state.uidNext = 4
+    state.searchCount = 3
+    const query = { subject: '报告' }
+    await listMailCached('user', account, 'INBOX', { query })
+    state.messages = 4
+    state.uidNext = 5
+    state.searchCount = 4
+    const page = await listMailCached('user', account, 'INBOX', { query })
+    expect(page.messages).toHaveLength(4)
+    expect(state.searchQueries).toHaveLength(2)
+  })
+
+  it('marks a message seen inside the cached page and isolates users', async () => {
+    state.messages = 2
+    state.uidNext = 3
+    state.searchCount = 2
+    const first = await listMailCached('user', account, 'INBOX')
+    expect(first.messages[0].unread).toBe(true)
+    mailListCache.markSeen('user', account.id, 'INBOX', 2)
+    const second = await listMailCached('user', account, 'INBOX')
+    expect(second.messages.find((item) => item.uid === 2)?.unread).toBe(false)
+    await listMailCached('another', account, 'INBOX')
+    expect(state.searchQueries).toHaveLength(2)
+  })
+
+  it('bypasses the cache for an explicit refresh and still stores the fresh page', async () => {
+    state.messages = 3
+    state.uidNext = 4
+    state.searchCount = 3
+    await listMailCached('user', account, 'INBOX')
+    await listMailCached('user', account, 'INBOX', { force: true })
+    expect(state.searchQueries).toHaveLength(2)
+    state.calls = []
+    await listMailCached('user', account, 'INBOX')
+    expect(state.searchQueries).toHaveLength(2)
+    expect(state.calls).toContain('status')
+  })
+
+  it('uses HIGHESTMODSEQ when the server offers CONDSTORE', async () => {
+    state.messages = 2
+    state.uidNext = 3
+    state.highestModseq = 900n
+    state.searchCount = 2
+    await listMailCached('user', account, 'INBOX')
+    const page = await listMailCached('user', account, 'INBOX')
+    expect(page.messages).toHaveLength(2)
+    expect(state.searchQueries).toHaveLength(1)
   })
 })

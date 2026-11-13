@@ -55,6 +55,7 @@ export interface MailListOptions {
   cursor?: string
   limit?: number
   query?: MailSearchQuery
+  force?: boolean
 }
 
 export interface MailPage {
