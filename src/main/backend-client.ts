@@ -54,7 +54,8 @@ export class BackendClient {
     let response: Response
     try {
       response = await fetch(`${this.baseUrl}/api/rpc/${encodeURIComponent(channel)}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-EmailAgent-Timezone': this.timeZone(),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ args: parameters }), signal: AbortSignal.timeout(180_000)
       })
     } catch (error) {
@@ -72,7 +73,7 @@ export class BackendClient {
       throw new Error(body.error || '后端请求失败')
     }
     if (token !== this.token) throw new Error('登录状态已变化，请重试')
-    if (channel === 'auth:login') {
+    if (channel === 'auth:login' || channel === 'auth:bootstrap') {
       if (!/^[a-f0-9]{64}$/.test(body.result?.token)) throw new Error('后端登录响应无效')
       this.stopEvents(); this.token = body.result.token
       await this.saveToken().catch(() => this.emit('app:error', '登录成功，但登录状态未能保存，下次启动需重新登录'))
@@ -81,6 +82,10 @@ export class BackendClient {
     }
     if (channel === 'auth:logout') await this.clearToken()
     return body.result as T
+  }
+
+  private timeZone(): string {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   }
 
   stopEvents(): void {
@@ -95,7 +100,9 @@ export class BackendClient {
     this.events = controller
     const token = this.token
     void (async () => {
-      const response = await fetch(`${this.baseUrl}/api/events`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal })
+      const response = await fetch(`${this.baseUrl}/api/events`, {
+        headers: { Authorization: `Bearer ${token}`, 'X-EmailAgent-Timezone': this.timeZone() }, signal: controller.signal
+      })
       if (response.status === 401) { await this.clearToken(); this.emit('auth:expired', null); return }
       if (!response.ok || !response.body) throw new Error('事件连接失败')
       const reader = response.body.getReader()
@@ -113,7 +120,7 @@ export class BackendClient {
           const event = JSON.parse(data) as { channel: string; payload: unknown }
           if (token !== this.token) return
           if (event.channel === 'auth:expired') await this.clearToken()
-          if (['auth:expired', 'app:error', 'agent:progress', 'ai:digest:ready'].includes(event.channel)) this.emit(event.channel, event.payload)
+          if (['auth:expired', 'app:error', 'agent:progress', 'ai:digest:ready', 'ai:digest:failed'].includes(event.channel)) this.emit(event.channel, event.payload)
         }
       }
     })().catch(() => undefined).finally(() => {

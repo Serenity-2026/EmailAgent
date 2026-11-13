@@ -1,0 +1,50 @@
+:root {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #202942;
+  background: #f7f8fc;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { width: 100%; height: 100%; overflow: hidden; }
+body { margin: 0; }
+button, input, textarea { font: inherit; }
+
+.app-shell { display: grid; grid-template-columns: 228px minmax(0, 1fr); width: 100%; height: 100dvh; overflow: hidden; }
+.sidebar { min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; padding: 30px 16px 20px; background: #f2f4fa; border-right: 1px solid #e8ebf3; }
+.brand { flex: none; padding: 0 12px 34px; color: #1c2742; font-size: 22px; font-weight: 760; letter-spacing: -.9px; }
+.brand span { color: #5178db; }
+.sidebar-label { margin: 30px 12px 12px; color: #929cb0; font-size: 11px; font-weight: 700; letter-spacing: 1.1px; }
+.sidebar-note { padding: 8px 14px; color: #7d899f; font-size: 12px; }
+.nav-item, .account-item { display: flex; flex: none; width: 100%; align-items: center; min-height: 40px; margin-bottom: 3px; padding: 9px 12px; border: 0; border-radius: 11px; background: transparent; color: #5b6680; text-align: left; font-size: 13px; font-weight: 550; cursor: pointer; }
+.nav-item:hover, .account-item:hover { background: #e8ecf7; color: #24365c; }
+.nav-item.active, .account-item.active { background: #e0e9ff; color: #315dbb; font-weight: 700; }
+.nav-item:disabled { opacity: .45; cursor: not-allowed; }
+.account-item { overflow: hidden; white-space: nowrap; }
+.account-item span { overflow: hidden; text-overflow: ellipsis; }
+.sidebar-bottom { flex: none; margin-top: auto; padding-top: 26px; }
+.account-trigger { display: flex; width: 100%; align-items: center; gap: 10px; padding: 7px 8px; border: 0; border-radius: 11px; background: transparent; color: #465570; text-align: left; cursor: pointer; }
+.account-trigger:hover { background: #e8ecf7; }
+.account-avatar { display: grid; flex: none; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #5178db; color: #fff; font-size: 14px; font-weight: 700; }
+.workspace { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.topbar { flex: none; min-height: 92px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 30px; background: #fff; border-bottom: 1px solid #eaedf3; }
+.topbar h1 { margin: 0; color: #1c2742; font-size: 22px; font-weight: 720; letter-spacing: -.5px; }
+.topbar p { margin: 6px 0 0; color: #929cb0; font-size: 12px; }
+.topbar-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.topbar-actions .ant-btn { border-radius: 9px; }
+.error-wrap { flex: none; padding: 12px 24px 0; overflow-wrap: anywhere; }
+.top-spinner { display: flex; justify-content: center; padding: 40px; }
+.launch-screen, .recovery-shell { display: grid; place-items: center; width: 100%; height: 100dvh; background: #f7f8fc; }
+.recovery-card { width: min(440px, calc(100vw - 40px)); padding: 38px; background: #fff; border: 1px solid #eaedf3; border-radius: 18px; box-shadow: 0 20px 60px rgba(35, 52, 91, .08); }
+.recovery-card .brand { padding: 0 0 28px; }
+.recovery-card h1 { margin: 0 0 12px; font-size: 21px; }
+.recovery-card p { margin: 0 0 24px; color: #66728a; font-size: 13px; line-height: 1.7; }
+.recovery-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+@media (max-width: 1050px) {
+  .app-shell { grid-template-columns: 185px minmax(0, 1fr); }
+  .sidebar { padding-right: 12px; padding-left: 12px; }
+  .topbar { padding: 16px 20px; }
+  .content { grid-template-columns: 290px minmax(0, 1fr); }
+  .reader { padding: 20px; }
+  .reader-card { padding: 28px; }
+}

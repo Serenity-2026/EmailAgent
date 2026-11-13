@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,19 +10,26 @@ import { MysqlStore } from './store'
 import { createBackendServer } from './server'
 import { emptyData, encryptVault, keyFor } from '../shared/vault'
 import { BackendClient } from '../main/backend-client'
+import { LoginAttemptLimiter } from './login-limiter'
 
 const encryption = vi.hoisted(() => ({ fail: false }))
 vi.mock('electron', () => ({ safeStorage: {
   isEncryptionAvailable: () => true,
+  getSelectedStorageBackend: () => 'secret-service',
   encryptString: (value: string) => Buffer.from(value),
   decryptString: (value: Buffer) => { if (encryption.fail) throw new Error('BAD_DECRYPT'); return value.toString() }
 } }))
 vi.mock('./mail', async (original) => ({ ...await original<typeof import('./mail')>(),
-  testAccount: vi.fn().mockResolvedValue(undefined), listMail: vi.fn().mockResolvedValue([]), sendMail: vi.fn().mockResolvedValue(undefined)
+  testAccount: vi.fn().mockImplementation(async (account: { id: string }) => ({ accountId: account.id,
+    imap: { ok: true, message: '收件连接正常' }, smtp: { ok: true, message: '发件连接正常' }, checkedAt: new Date().toISOString() })),
+  inspectAccountHealth: vi.fn().mockImplementation(async (account: { id: string }) => ({ accountId: account.id,
+    imap: { ok: true, message: '收件连接正常' }, smtp: { ok: true, message: '发件连接正常' }, checkedAt: new Date().toISOString() })),
+  listMail: vi.fn().mockResolvedValue([]), sendMail: vi.fn().mockResolvedValue(undefined)
 }))
 vi.mock('./ai', async (original) => ({ ...await original<typeof import('./ai')>(), testAiConnection: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('./agent', async (original) => ({ ...await original<typeof import('./agent')>(), runAgentTask: vi.fn() }))
 import { runAgentTask } from './agent'
+import { testAccount } from './mail'
 
 describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integration', () => {
   let root: Pool
@@ -36,8 +43,8 @@ describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integr
   const ai = { baseUrl: 'https://example.com/v1', apiKey: 'secret-ai-key', model: 'test-model', dailyTime: '09:00', autoDaily: false }
   const account = { provider: 'qq', address: 'student@qq.com', authorizationCode: 'mail-secret-code' }
 
-  async function startServer(): Promise<void> {
-    server = createBackendServer(db)
+  async function startServer(loginLimiter?: LoginAttemptLimiter): Promise<void> {
+    server = createBackendServer(db, { loginLimiter })
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     baseUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}`
   }
@@ -60,13 +67,14 @@ describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integr
   beforeAll(async () => {
     root = createPool(mysql)
     await root.query(`CREATE DATABASE ${databaseName} CHARACTER SET utf8mb4`)
-    db = new Database(createPool({ ...mysql, database: databaseName }), randomBytes(32))
+    db = new Database(createPool({ ...mysql, database: databaseName }), randomBytes(32), true)
   })
   beforeEach(async () => {
     await db.initialize()
     await db.pool.execute('DELETE FROM sessions')
     await db.pool.execute('DELETE FROM migration_receipts')
     await db.pool.execute('DELETE FROM users')
+    await db.pool.execute('DELETE FROM app_state')
     await db.initialize()
     vi.clearAllMocks()
     await startServer()
@@ -86,6 +94,47 @@ describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integr
     expect((await rpc('missing:channel')).status).toBe(404)
     const response = await fetch(`${baseUrl}/api/rpc/auth%3Alogin`, { method: 'POST', headers: { Origin: 'https://untrusted.example', 'Content-Type': 'application/json' }, body: JSON.stringify({ args: ['dmc', '123456'] }) })
     expect(response.status).toBe(403)
+  })
+
+  it('bootstraps an empty database once and keeps the new session across a restart', async () => {
+    await db.pool.execute('DELETE FROM sessions')
+    await db.pool.execute('DELETE FROM users')
+    await db.pool.execute('UPDATE app_state SET initialized = FALSE WHERE id = 1')
+    expect((await rpc('auth:bootstrap-status')).result).toEqual({ required: true, demoMode: true })
+    const created = await rpc('auth:bootstrap', ['admin', 'strong-password'])
+    expect(created.status).toBe(200)
+    expect(created.result.username).toBe('admin')
+    expect((await rpc('auth:session', [], created.result.token)).result.username).toBe('admin')
+    expect((await rpc('auth:bootstrap', ['other', 'other-password'])).error).toContain('已经完成初始化')
+    await closeServer(); await startServer()
+    expect((await rpc('auth:session', [], created.result.token)).result.username).toBe('admin')
+    expect(await db.user('dmc')).toBeNull()
+  })
+
+  it('preserves existing users when adding bootstrap state to an older database', async () => {
+    const before = await MysqlStore.login(db, 'dmc', '123456')
+    await before.setThemeMode('dark')
+    before.logout()
+    await db.pool.execute('DROP TABLE app_state')
+    await db.initialize()
+    expect((await db.bootstrapStatus()).required).toBe(false)
+    const restored = await MysqlStore.login(db, 'dmc', '123456')
+    expect(restored.themeMode).toBe('dark')
+    restored.logout()
+  })
+
+  it('rate-limits repeated login failures without revealing whether an account exists', async () => {
+    await closeServer()
+    let now = 1_000
+    await startServer(new LoginAttemptLimiter(() => now, 2, 60_000, 30_000))
+    const wrongUser = await rpc('auth:login', ['missing', 'wrong'])
+    const wrongPassword = await rpc('auth:login', ['dmc', 'wrong'])
+    expect(wrongUser.error).toBe('账号或密码错误')
+    expect(wrongPassword.error).toBe('账号或密码错误')
+    expect((await rpc('auth:login', ['dmc', 'wrong-again'])).status).toBe(429)
+    expect((await rpc('auth:login', ['dmc', '123456'])).status).toBe(429)
+    now += 30_001
+    expect((await rpc('auth:login', ['dmc', '123456'])).status).toBe(200)
   })
 
   it('persists isolated mailbox, AI, theme and history data as encrypted MySQL values', async () => {
@@ -115,6 +164,43 @@ describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integr
     store.logout()
   })
 
+  it('rolls back a failed credential validation and never returns either credential', async () => {
+    const token = await login()
+    const added = await rpc('accounts:add', [account], token)
+    vi.mocked(testAccount).mockRejectedValueOnce(new Error(`provider detail ${account.authorizationCode}`))
+    const failed = await rpc('accounts:update-authorization', [added.result.id, 'bad-new-code'], token)
+    expect(failed.error).toBe('连接失败，旧授权码未被修改')
+    let store = await MysqlStore.login(db, 'dmc', '123456')
+    expect(store.accounts[0].authorizationCode).toBe(account.authorizationCode)
+    store.logout()
+
+    const updated = await rpc('accounts:update-authorization', [added.result.id, 'replacement-code'], token)
+    expect(updated.status).toBe(200)
+    expect(JSON.stringify(updated)).not.toContain('replacement-code')
+    expect(JSON.stringify(updated)).not.toContain(account.authorizationCode)
+    store = await MysqlStore.login(db, 'dmc', '123456')
+    expect(store.accounts[0]).toMatchObject({ id: added.result.id, provider: account.provider,
+      address: account.address, authorizationCode: 'replacement-code' })
+    store.logout()
+  })
+
+  it('keeps a bounded local draft encrypted across restart and deletes it explicitly', async () => {
+    const token = await login()
+    const added = await rpc('accounts:add', [account], token)
+    const saved = await rpc('drafts:save', ['', {
+      accountId: added.result.id, to: ['teacher@example.com'], cc: ['assistant@example.com'], bcc: [],
+      subject: '课程草稿', text: '私密草稿正文'
+    }], token)
+    expect(saved.status).toBe(200)
+    const [rows] = await db.pool.query('SELECT vault FROM users WHERE username = "dmc"')
+    expect(JSON.stringify(rows)).not.toContain('私密草稿正文')
+    await closeServer(); await startServer()
+    const restored = await rpc('drafts:list', [], token)
+    expect(restored.result).toEqual([saved.result])
+    await rpc('drafts:remove', [saved.result.id], token)
+    expect((await rpc('drafts:list', [], token)).result).toEqual([])
+  })
+
   it('keeps sessions and data after a backend restart and revokes them on logout', async () => {
     const token = await login()
     await rpc('accounts:add', [account], token)
@@ -125,6 +211,24 @@ describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integr
     expect((await rpc('theme:get', [], token)).result).toBe('dark')
     await rpc('auth:logout', [], token)
     expect((await rpc('auth:session', [], token)).status).toBe(401)
+  })
+
+  it('restores encrypted digest history after a backend restart', async () => {
+    const token = await login()
+    const store = await MysqlStore.login(db, 'dmc', '123456')
+    const generatedAt = new Date().toISOString()
+    await store.setDigestHistory([{
+      date: generatedAt.slice(0, 10), generatedAt, mode: 'auto', content: '持久化摘要', warnings: [], sources: [{
+        uid: 7, accountId: 'account', folder: 'INBOX', from: 'teacher@example.com', subject: '课程',
+        date: generatedAt, unread: true
+      }]
+    }])
+    store.logout()
+    expect((await rpc('ai:digest:history', [], token)).result[0].content).toBe('持久化摘要')
+    await closeServer(); await startServer()
+    const restored = await rpc('ai:digest:history', [], token)
+    expect(restored.result[0]).toMatchObject({ mode: 'auto', content: '持久化摘要' })
+    expect(restored.result[0].sources[0]).not.toHaveProperty('text')
   })
 
   it('refreshes the current session key and revokes other sessions after a password change', async () => {
@@ -179,11 +283,11 @@ describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integr
       ensureActive!()
       return { answer: '回答', sources: [], actions: [], warnings: [], truncated: false, scope: '近期' }
     })
-    const task = rpc('agent:run', ['总结邮件'], token)
+    const task = rpc('agent:run', ['总结邮件', '', randomUUID()], token)
     await waiting
     expect((await rpc('auth:logout', [], token)).status).toBe(200)
     release()
-    expect((await task).error).toContain('登录状态已变化')
+    expect((await task).error).toContain('Agent 任务已取消')
     const restored = await MysqlStore.login(db, 'dmc', '123456')
     expect(restored.agentConversations).toEqual([])
     restored.logout()

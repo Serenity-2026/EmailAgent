@@ -1,14 +1,42 @@
 import { randomBytes } from 'node:crypto'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { access, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join, posix, win32 } from 'node:path'
 
 const execute = promisify(execFile)
-const commandPaths = ['/opt/homebrew/bin', '/usr/local/bin', '/Applications/Docker.app/Contents/Resources/bin',
-  join(homedir(), '.docker/bin'), '/usr/bin', '/bin', ...(process.env.PATH || '').split(':').filter(Boolean)]
-const commandEnv = { ...process.env, PATH: `${commandPaths.join(':')}:${process.env.PATH || ''}` }
+
+function currentPath(environment: NodeJS.ProcessEnv): string {
+  return Object.entries(environment).find(([key]) => key.toLowerCase() === 'path')?.[1] || ''
+}
+
+export function platformCommandPaths(platform: NodeJS.Platform, environment: NodeJS.ProcessEnv,
+  homeDirectory: string): string[] {
+  const pathApi = platform === 'win32' ? win32 : posix
+  const inherited = currentPath(environment).split(platform === 'win32' ? ';' : ':').filter(Boolean)
+  if (platform === 'win32') {
+    const programFiles = environment.ProgramFiles || 'C:\\Program Files'
+    const localAppData = environment.LOCALAPPDATA
+    return [pathApi.join(programFiles, 'Docker', 'Docker', 'resources', 'bin'),
+      ...(localAppData ? [pathApi.join(localAppData, 'Docker', 'resources', 'bin')] : []), ...inherited]
+  }
+  return ['/opt/homebrew/bin', '/usr/local/bin', '/Applications/Docker.app/Contents/Resources/bin',
+    pathApi.join(homeDirectory, '.docker/bin'), '/usr/bin', '/bin', ...inherited]
+}
+
+export function windowsDockerDesktopPaths(environment: NodeJS.ProcessEnv): string[] {
+  const programFiles = environment.ProgramFiles || 'C:\\Program Files'
+  const localAppData = environment.LOCALAPPDATA
+  return [win32.join(programFiles, 'Docker', 'Docker', 'Docker Desktop.exe'),
+    ...(localAppData ? [win32.join(localAppData, 'Docker', 'Docker Desktop.exe')] : [])]
+}
+
+const commandPaths = platformCommandPaths(process.platform, process.env, homedir())
+const commandEnv: NodeJS.ProcessEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'path')
+)
+commandEnv.PATH = commandPaths.join(delimiter)
 
 async function command(name: string, args: string[], timeout = 30_000, extraEnv: NodeJS.ProcessEnv = {}): Promise<string> {
   const { stdout } = await execute(name, args, { timeout, maxBuffer: 1024 * 1024, env: { ...commandEnv, ...extraEnv } })
@@ -16,8 +44,23 @@ async function command(name: string, args: string[], timeout = 30_000, extraEnv:
 }
 
 async function available(name: string): Promise<boolean> {
+  const names = process.platform === 'win32' ? [name, `${name}.exe`, `${name}.cmd`] : [name]
   for (const directory of commandPaths) {
-    try { await access(join(directory, name)); return true } catch { /* Try another location. */ }
+    for (const candidate of names) {
+      try { await access(join(directory, candidate)); return true } catch { /* Try another location. */ }
+    }
+  }
+  return false
+}
+
+async function launchWindowsDockerDesktop(): Promise<boolean> {
+  for (const executable of windowsDockerDesktopPaths(process.env)) {
+    try {
+      await access(executable)
+      const child = spawn(executable, [], { detached: true, stdio: 'ignore', windowsHide: true })
+      child.unref()
+      return true
+    } catch { /* Try another supported install location. */ }
   }
   return false
 }
@@ -90,9 +133,11 @@ export class LocalService {
       try { await command('docker', ['info', '--format', '{{.ServerVersion}}'], 5000); return true } catch { return false }
     }
     if (!await dockerReady()) {
-      if (await available('colima')) {
+      if (process.platform === 'win32') {
+        await launchWindowsDockerDesktop()
+      } else if (await available('colima')) {
         try { await command('colima', ['start'], 180_000) } catch { /* Verify Docker directly below. */ }
-      } else {
+      } else if (process.platform === 'darwin') {
         try { await command('/usr/bin/open', ['-a', 'Docker'], 10_000) } catch { /* Verify Docker directly below. */ }
       }
       if (!await waitFor(dockerReady, 90_000)) throw new Error('Docker 未能启动，请检查 Docker 后重新连接')

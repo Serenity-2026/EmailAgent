@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto'
-import type { Account, AgentConversation, AiSettingsInput, ThemeMode } from './models'
+import type { Account, AgentConversation, AiSettingsInput, DigestHistoryItem, MailDraft, MailSummary, SavedDraft, ThemeMode } from './models'
 
 export interface StoredAccount extends Account {
   authorizationCode: string
@@ -8,7 +8,9 @@ export interface StoredAccount extends Account {
 export interface StoredData {
   accounts: StoredAccount[]
   ai: AiSettingsInput
+  digestHistory?: DigestHistoryItem[]
   agentConversations?: AgentConversation[]
+  savedDrafts?: SavedDraft[]
   themeMode?: ThemeMode
 }
 
@@ -28,7 +30,9 @@ export interface VaultFile {
 export const emptyData = (): StoredData => ({
   accounts: [],
   ai: { baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false },
+  digestHistory: [],
   agentConversations: [],
+  savedDrafts: [],
   themeMode: 'system'
 })
 
@@ -41,8 +45,100 @@ export function currentConversations(items: unknown): AgentConversation[] {
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 30)
     .map((item) => ({ ...item, messages: item.messages.filter((message) =>
       typeof message.createdAt === 'string' && Number.isFinite(Date.parse(message.createdAt)) &&
-      Date.parse(message.createdAt) >= cutoff).slice(-40) }))
+      Date.parse(message.createdAt) >= cutoff).slice(-40).map((message) => {
+        const draft = normalizeMailDraft((message as unknown as { draft?: unknown }).draft)
+        return { ...message, draft: draft || undefined }
+      }) }))
     .filter((item) => item.messages.length > 0)
+}
+
+function digestSource(value: unknown): MailSummary | null {
+  if (!value || typeof value !== 'object') return null
+  const source = value as Record<string, unknown>
+  if (!Number.isSafeInteger(source.uid) || Number(source.uid) <= 0 ||
+    !['accountId', 'folder', 'from', 'subject', 'date'].every((key) => typeof source[key] === 'string') ||
+    typeof source.unread !== 'boolean') return null
+  return {
+    uid: Number(source.uid), accountId: source.accountId as string, folder: source.folder as string,
+    from: source.from as string, subject: source.subject as string, date: source.date as string,
+    unread: source.unread
+  }
+}
+
+export function currentDigestHistory(items: unknown, now = Date.now()): DigestHistoryItem[] {
+  if (!Array.isArray(items)) return []
+  const cutoff = now - 7 * 24 * 60 * 60 * 1000
+  const unique = new Set<string>()
+  return (items as unknown[]).flatMap((value) => {
+    if (!value || typeof value !== 'object') return []
+    const item = value as Record<string, unknown>
+    const generated = typeof item.generatedAt === 'string' ? Date.parse(item.generatedAt) : NaN
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(item.date)) || !Number.isFinite(generated) || generated < cutoff || generated > now + 300_000 ||
+      (item.mode !== 'manual' && item.mode !== 'auto') || typeof item.content !== 'string' || !Array.isArray(item.sources) ||
+      !Array.isArray(item.warnings) || item.warnings.some((warning) => typeof warning !== 'string')) return []
+    const sources = item.sources.map(digestSource)
+    if (sources.some((source) => !source)) return []
+    return [{
+      date: item.date as string, generatedAt: item.generatedAt as string, mode: item.mode,
+      content: item.content, sources: sources as MailSummary[], warnings: item.warnings as string[]
+    } satisfies DigestHistoryItem]
+  }).sort((a, b) => b.generatedAt.localeCompare(a.generatedAt)).filter((item) => {
+    const key = `${item.date}\0${item.mode}`
+    if (unique.has(key)) return false
+    unique.add(key)
+    return true
+  }).slice(0, 14)
+}
+
+function recipientList(value: unknown): string[] | null {
+  const entries = typeof value === 'string' ? (value.trim() ? [value] : []) : value
+  if (!Array.isArray(entries) || entries.length > 50 || entries.some((item) => typeof item !== 'string' || item.length > 320)) return null
+  return entries.map((item) => item.trim()).filter(Boolean)
+}
+
+export function normalizeMailDraft(value: unknown): MailDraft | null {
+  if (!value || typeof value !== 'object') return null
+  const draft = value as Record<string, unknown>
+  const to = recipientList(draft.to)
+  const cc = draft.cc === undefined ? [] : recipientList(draft.cc)
+  const bcc = draft.bcc === undefined ? [] : recipientList(draft.bcc)
+  if (typeof draft.accountId !== 'string' || !to || !cc || !bcc || to.length + cc.length + bcc.length > 50 ||
+    typeof draft.subject !== 'string' || draft.subject.length > 2000 ||
+    typeof draft.text !== 'string' || draft.text.length > 1_000_000) return null
+  const seen = new Set<string>()
+  const unique = (items: string[]): string[] => items.filter((item) => {
+    const key = item.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  let replyTo: MailDraft['replyTo']
+  if (draft.replyTo !== undefined) {
+    if (!draft.replyTo || typeof draft.replyTo !== 'object') return null
+    const reply = draft.replyTo as Record<string, unknown>
+    if (!Number.isSafeInteger(reply.uid) || Number(reply.uid) <= 0 || typeof reply.folder !== 'string' ||
+      (reply.uidValidity !== undefined && typeof reply.uidValidity !== 'string')) return null
+    replyTo = { uid: Number(reply.uid), folder: reply.folder, ...(reply.uidValidity === undefined ? {} : { uidValidity: reply.uidValidity as string }) }
+  }
+  return { accountId: draft.accountId, to: unique(to), cc: unique(cc), bcc: unique(bcc),
+    subject: draft.subject, text: draft.text, ...(replyTo ? { replyTo } : {}) }
+}
+
+export function currentSavedDrafts(items: unknown): SavedDraft[] {
+  if (!Array.isArray(items)) return []
+  const ids = new Set<string>()
+  return items.flatMap((value) => {
+    if (!value || typeof value !== 'object') return []
+    const item = value as Record<string, unknown>
+    const timestamp = typeof item.updatedAt === 'string' ? Date.parse(item.updatedAt) : NaN
+    const draft = normalizeMailDraft(item.draft)
+    if (typeof item.id !== 'string' || !item.id || item.id.length > 100 || !Number.isFinite(timestamp) || !draft) return []
+    return [{ id: item.id, updatedAt: item.updatedAt as string, draft } satisfies SavedDraft]
+  }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).filter((item) => {
+    if (ids.has(item.id)) return false
+    ids.add(item.id)
+    return true
+  }).slice(0, 20)
 }
 
 function isStoredData(value: unknown): value is StoredData {

@@ -14,13 +14,18 @@ export function databaseFromEnvironment(): Database {
     user: process.env.MYSQL_USER || 'emailagent', password: process.env.MYSQL_PASSWORD,
     database: process.env.MYSQL_DATABASE || 'emailagent', connectionLimit: 8,
     charset: 'utf8mb4', timezone: 'Z', connectTimeout: 10_000
-  }), secret)
+  }), secret, process.env.EMAILAGENT_DEMO_MODE === '1')
 }
 
 export class Database {
-  constructor(readonly pool: Pool, private readonly sessionKey: Buffer) {}
+  constructor(readonly pool: Pool, private readonly sessionKey: Buffer, readonly demoMode = false) {}
 
   async initialize(): Promise<void> {
+    await this.pool.execute(`CREATE TABLE IF NOT EXISTS app_state (
+      id TINYINT UNSIGNED PRIMARY KEY,
+      initialized BOOLEAN NOT NULL DEFAULT FALSE,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )`)
     await this.pool.execute(`CREATE TABLE IF NOT EXISTS users (
       username VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
       vault JSON NOT NULL, revision INT UNSIGNED NOT NULL DEFAULT 0,
@@ -37,12 +42,42 @@ export class Database {
       source_hash CHAR(64) CHARACTER SET ascii PRIMARY KEY,
       imported_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`)
-    const salt = randomBytes(16).toString('base64')
-    const key = keyFor('123456', salt)
-    const vault = encryptVault('dmc', salt, key, emptyData())
-    key.fill(0)
-    await this.pool.execute('INSERT IGNORE INTO users (username, vault) VALUES (?, ?)', ['dmc', JSON.stringify(vault)])
+    await this.pool.execute('INSERT IGNORE INTO app_state (id, initialized) VALUES (1, FALSE)')
+    await this.pool.execute('UPDATE app_state SET initialized = TRUE WHERE id = 1 AND EXISTS (SELECT 1 FROM users LIMIT 1)')
+    if (this.demoMode && (await this.bootstrapStatus()).required) {
+      const salt = randomBytes(16).toString('base64')
+      const key = keyFor('123456', salt)
+      try { await this.bootstrapUser(encryptVault('dmc', salt, key, emptyData())) } finally { key.fill(0) }
+    }
     await this.pool.execute('DELETE FROM sessions WHERE expires_at <= UTC_TIMESTAMP()')
+  }
+
+  async bootstrapStatus(): Promise<{ required: boolean; demoMode: boolean }> {
+    const [rows] = await this.pool.execute<RowDataPacket[]>('SELECT initialized FROM app_state WHERE id = 1')
+    return { required: !Boolean(rows[0]?.initialized), demoMode: this.demoMode }
+  }
+
+  async bootstrapUser(vault: UserVault): Promise<void> {
+    const connection = await this.pool.getConnection()
+    let existingUser = false
+    try {
+      await connection.beginTransaction()
+      const [state] = await connection.execute<RowDataPacket[]>('SELECT initialized FROM app_state WHERE id = 1 FOR UPDATE')
+      if (!state.length || state[0].initialized) throw new Error('系统已经完成初始化')
+      const [users] = await connection.execute<RowDataPacket[]>('SELECT username FROM users LIMIT 1 FOR UPDATE')
+      if (users.length) {
+        await connection.execute('UPDATE app_state SET initialized = TRUE WHERE id = 1')
+        existingUser = true
+      } else {
+        await connection.execute('INSERT INTO users (username, vault) VALUES (?, ?)', [vault.username, JSON.stringify(vault)])
+        await connection.execute('UPDATE app_state SET initialized = TRUE WHERE id = 1')
+      }
+      await connection.commit()
+    } catch (error) {
+      await connection.rollback()
+      throw error
+    } finally { connection.release() }
+    if (existingUser) throw new Error('系统已经完成初始化')
   }
 
   async user(username: string): Promise<{ vault: UserVault; revision: number } | null> {

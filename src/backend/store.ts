@@ -1,6 +1,9 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
-import type { AgentConversation, AiSettingsInput, ThemeMode } from '../shared/models'
-import { currentConversations, decryptVault, emptyData, encryptVault, keyFor, type StoredAccount, type StoredData } from '../shared/vault'
+import type { AgentConversation, AiSettingsInput, DigestHistoryItem, SavedDraft, ThemeMode } from '../shared/models'
+import {
+  currentConversations, currentDigestHistory, currentSavedDrafts, decryptVault, emptyData, encryptVault, keyFor,
+  type StoredAccount, type StoredData
+} from '../shared/vault'
 import { Database } from './database'
 
 export class MysqlStore {
@@ -18,6 +21,22 @@ export class MysqlStore {
     } catch { key.fill(0); throw new Error('账号或密码错误') }
   }
 
+  static async bootstrap(db: Database, username: string, password: string): Promise<MysqlStore> {
+    const name = username.trim()
+    if (!/^[A-Za-z0-9_]{3,32}$/.test(name)) throw new Error('账号需为 3–32 位字母、数字或下划线')
+    if (password.length < 8) throw new Error('初始密码至少需要 8 位')
+    const salt = randomBytes(16).toString('base64')
+    const key = keyFor(password, salt)
+    const data = emptyData()
+    try {
+      await db.bootstrapUser(encryptVault(name, salt, key, data))
+      return new MysqlStore(db, name, key, salt, data, 0)
+    } catch (error) {
+      key.fill(0)
+      throw error
+    }
+  }
+
   static async restore(db: Database, username: string, key: Buffer): Promise<MysqlStore> {
     const user = await db.user(username)
     if (!user) { key.fill(0); throw new Error('登录状态已失效，请重新登录') }
@@ -30,6 +49,8 @@ export class MysqlStore {
   get accounts(): StoredAccount[] { this.ensureReady(); return this.data.accounts }
   get ai(): AiSettingsInput { this.ensureReady(); return this.data.ai }
   get agentConversations(): AgentConversation[] { this.ensureReady(); return currentConversations(this.data.agentConversations) }
+  get digestHistory(): DigestHistoryItem[] { this.ensureReady(); return currentDigestHistory(this.data.digestHistory) }
+  get savedDrafts(): SavedDraft[] { this.ensureReady(); return currentSavedDrafts(this.data.savedDrafts) }
   get themeMode(): ThemeMode { this.ensureReady(); return this.data.themeMode === 'dark' || this.data.themeMode === 'light' ? this.data.themeMode : 'system' }
 
   async createSession(): Promise<string> { this.ensureReady(); return this.db.createSession(this.username, this.key) }
@@ -54,8 +75,17 @@ export class MysqlStore {
     if (version === this.version) { this.data = data; this.revision++ }
   }
   async setAccounts(accounts: StoredAccount[]): Promise<void> { await this.save({ ...this.data, accounts }) }
+  async setAccountsAndSavedDrafts(accounts: StoredAccount[], savedDrafts: SavedDraft[]): Promise<void> {
+    await this.save({ ...this.data, accounts, savedDrafts: currentSavedDrafts(savedDrafts) })
+  }
   async setAi(ai: AiSettingsInput): Promise<void> { await this.save({ ...this.data, ai }) }
   async setAgentConversations(items: AgentConversation[]): Promise<void> { await this.save({ ...this.data, agentConversations: currentConversations(items) }) }
+  async setDigestHistory(items: DigestHistoryItem[]): Promise<void> {
+    await this.save({ ...this.data, digestHistory: currentDigestHistory(items) })
+  }
+  async setSavedDrafts(items: SavedDraft[]): Promise<void> {
+    await this.save({ ...this.data, savedDrafts: currentSavedDrafts(items) })
+  }
   async setThemeMode(mode: ThemeMode): Promise<void> {
     if (mode !== 'system' && mode !== 'light' && mode !== 'dark') throw new Error('主题选项无效')
     await this.save({ ...this.data, themeMode: mode })

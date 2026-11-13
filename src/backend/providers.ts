@@ -21,3 +21,23 @@ export function validateRecipient(address: string): void {
     throw new Error('请输入有效的收件人邮箱地址')
   }
 }
+
+export function validateRecipients(recipients: { to: string[]; cc: string[]; bcc: string[] }): {
+  to: string[]; cc: string[]; bcc: string[]
+} {
+  if (![recipients.to, recipients.cc, recipients.bcc].every(Array.isArray)) throw new Error('收件人格式无效')
+  const total = recipients.to.length + recipients.cc.length + recipients.bcc.length
+  if (total === 0) throw new Error('请至少输入一位收件人')
+  if (total > 50) throw new Error('一次最多填写 50 位收件人')
+  const seen = new Set<string>()
+  const clean = (items: string[]): string[] => items.map((address) => {
+    validateRecipient(address)
+    return address.trim()
+  }).filter((address) => {
+    const key = address.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  return { to: clean(recipients.to), cc: clean(recipients.cc), bcc: clean(recipients.bcc) }
+}

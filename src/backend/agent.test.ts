@@ -39,7 +39,9 @@ describe('Agent boundaries', () => {
       [mail(1)], '总结邮件')).toThrow('未经请求')
     const result = parseAgentAnswer('{"answer":"请回复[1]","citations":[1],"draft":{"sourceIndex":1,"subject":"Re: 报告","text":"收到。","to":"attacker@example.com"},"actions":[]}',
       [mail(1)], '给老师起草回复')
-    expect(result.draft?.to).toBe('teacher@example.com')
+    expect(result.draft?.to).toEqual(['teacher@example.com'])
+    expect(result.draft?.cc).toEqual([])
+    expect(result.draft?.bcc).toEqual([])
     expect(result.draft?.replyTo?.uidValidity).toBe('11')
   })
 
@@ -113,6 +115,18 @@ describe('Agent boundaries', () => {
     vi.mocked(complete).mockResolvedValueOnce('{"accountAddresses":[],"since":null,"before":null}')
     await expect(runAgentTask(settings, '查邮件', [account], undefined, () => undefined,
       () => { throw new Error('登录状态已变化') })).rejects.toThrow('登录状态已变化')
+    expect(searchAgentMail).not.toHaveBeenCalled()
+  })
+
+  it('passes cancellation through the planning model request', async () => {
+    const controller = new AbortController()
+    vi.mocked(complete).mockImplementationOnce(async (_settings, _system, _user, signal) =>
+      new Promise<string>((_resolve, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })))
+    const running = runAgentTask(settings, '查邮件', [account], undefined, () => undefined,
+      () => { if (controller.signal.aborted) throw new Error('Agent 任务已取消') }, controller.signal)
+    expect(vi.mocked(complete).mock.calls[0][3]).toBe(controller.signal)
+    controller.abort()
+    await expect(running).rejects.toThrow('aborted')
     expect(searchAgentMail).not.toHaveBeenCalled()
   })
 })

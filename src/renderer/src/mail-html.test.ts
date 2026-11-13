@@ -6,7 +6,7 @@ import { buildMailDocument } from './mail-html'
 const mail = (html: string): MailDetail => ({
   uid: 1, accountId: 'account', folder: 'INBOX', from: 'sender@example.com', subject: 'HTML',
   date: new Date().toISOString(), unread: false, to: 'reader@example.com', text: 'fallback',
-  attachmentNames: [], inlineImages: [], html
+  attachments: [], inlineImages: [], uidValidity: '1', html
 })
 
 describe('HTML mail document', () => {

@@ -12,6 +12,18 @@ export interface Account {
   address: string
 }
 
+export interface AccountConnectionStatus {
+  ok: boolean
+  message: string
+}
+
+export interface AccountHealth {
+  accountId: string
+  imap: AccountConnectionStatus
+  smtp: AccountConnectionStatus
+  checkedAt: string
+}
+
 export interface MailSummary {
   uid: number
   accountId: string
@@ -22,22 +34,87 @@ export interface MailSummary {
   unread: boolean
 }
 
+export interface MailFolder {
+  id: string
+  path: string
+  name: string
+  specialUse?: string
+  selectable: boolean
+  readOnly: boolean
+}
+
+export interface MailSearchQuery {
+  subject?: string
+  from?: string
+  since?: string
+  before?: string
+  unread?: boolean
+}
+
+export interface MailListOptions {
+  cursor?: string
+  limit?: number
+  query?: MailSearchQuery
+}
+
+export interface MailPage {
+  messages: MailSummary[]
+  nextCursor?: string
+  truncated: boolean
+  warnings: string[]
+}
+
 export interface MailDetail extends MailSummary {
+  uidValidity: string
   to: string
   text: string
   html?: string
   inlineImages: { contentId: string; contentType: string; base64: string }[]
   messageId?: string
   references?: string[]
-  attachmentNames: string[]
+  attachments: MailAttachment[]
+}
+
+export interface MailAttachment {
+  id: string
+  name: string
+  contentType: string
+  size: number
+  downloadable: boolean
+  reason?: string
+}
+
+export interface AttachmentDownload {
+  fileName: string
+  contentType: string
+  size: number
+  base64: string
+}
+
+export interface AttachmentSaveResult {
+  saved: boolean
+  fileName?: string
+}
+
+export interface DiagnosticExportResult {
+  saved: boolean
+  fileName?: string
 }
 
 export interface MailDraft {
   accountId: string
-  to: string
+  to: string[]
+  cc: string[]
+  bcc: string[]
   subject: string
   text: string
   replyTo?: { uid: number; folder: string; uidValidity?: string }
+}
+
+export interface SavedDraft {
+  id: string
+  updatedAt: string
+  draft: MailDraft
 }
 
 export interface AiSettingsInput {
@@ -56,6 +133,18 @@ export interface DailyDigest {
   date: string
   content: string
   sources: MailSummary[]
+  warnings: string[]
+}
+
+export interface DigestHistoryItem extends DailyDigest {
+  generatedAt: string
+  mode: 'manual' | 'auto'
+}
+
+export interface DigestFailure {
+  message: string
+  retriesRemaining: number
+  nextRetryAt?: string
 }
 
 export interface AgentMailRef extends MailSummary {
@@ -67,6 +156,11 @@ export interface AgentMailRef extends MailSummary {
 }
 
 export type ThemeMode = 'system' | 'light' | 'dark'
+
+export interface BootstrapStatus {
+  required: boolean
+  demoMode: boolean
+}
 
 export interface MailOverview {
   since: string
@@ -130,11 +224,19 @@ export interface AgentConfirmResult {
 }
 
 export interface AgentProgress {
-  stage: 'planning' | 'searching' | 'reading' | 'answering'
+  jobId: string
+  stage: 'planning' | 'searching' | 'reading' | 'answering' | 'completed' | 'cancelled' | 'failed'
   detail: string
 }
 
+export interface AgentCancelResult {
+  jobId: string
+  status: 'cancelling' | 'idle'
+}
+
 export interface DesktopApi {
+  getBootstrapStatus(): Promise<BootstrapStatus>
+  bootstrap(username: string, password: string): Promise<{ username: string }>
   getSession(): Promise<{ username: string | null }>
   login(username: string, password: string): Promise<{ username: string }>
   logout(): Promise<void>
@@ -143,20 +245,33 @@ export interface DesktopApi {
   listAccounts(): Promise<Account[]>
   addAccount(input: AccountInput): Promise<Account>
   removeAccount(id: string): Promise<void>
-  listMail(accountId: string, folder: string): Promise<MailSummary[]>
+  updateAccountAuthorizationCode(id: string, authorizationCode: string): Promise<AccountHealth>
+  checkAccountHealth(id: string): Promise<AccountHealth>
+  listMailFolders(accountId: string): Promise<MailFolder[]>
+  listMail(accountId: string, folder: string, options?: MailListOptions): Promise<MailPage>
   getMail(accountId: string, folder: string, uid: number, markRead?: boolean): Promise<MailDetail>
+  saveAttachment(accountId: string, folder: string, uid: number, uidValidity: string,
+    attachmentId: string, suggestedName: string): Promise<AttachmentSaveResult>
   openExternalLink(url: string): Promise<void>
   getSentFolder(accountId: string): Promise<string | null>
   sendMail(draft: MailDraft): Promise<void>
+  listSavedDrafts(): Promise<SavedDraft[]>
+  saveDraft(id: string, draft: MailDraft): Promise<SavedDraft>
+  removeSavedDraft(id: string): Promise<void>
+  setComposeDirty(dirty: boolean): Promise<void>
+  exportDiagnostics(): Promise<DiagnosticExportResult>
   getAiSettings(): Promise<AiSettingsView>
   listAiModels(baseUrl: string, apiKey: string): Promise<string[]>
   saveAiSettings(input: AiSettingsInput): Promise<void>
   testAiConnection(): Promise<void>
   generateDraft(instruction: string, accountId: string): Promise<MailDraft>
-  generateDigest(accountIds: string[]): Promise<DailyDigest>
-  onDailyDigest(listener: (digest: DailyDigest) => void): () => void
+  generateDigest(accountIds: string[]): Promise<DigestHistoryItem>
+  listDigestHistory(): Promise<DigestHistoryItem[]>
+  onDailyDigest(listener: (digest: DigestHistoryItem) => void): () => void
+  onDailyDigestFailure(listener: (failure: DigestFailure) => void): () => void
   listAgentConversations(): Promise<AgentConversation[]>
-  runAgent(prompt: string, conversationId?: string): Promise<AgentRunResult>
+  runAgent(prompt: string, conversationId: string | undefined, jobId: string): Promise<AgentRunResult>
+  cancelAgentJob(jobId: string): Promise<AgentCancelResult>
   confirmAgentProposal(proposalId: string): Promise<AgentConfirmResult>
   clearAgentHistory(): Promise<void>
   onAgentProgress(listener: (progress: AgentProgress) => void): () => void
