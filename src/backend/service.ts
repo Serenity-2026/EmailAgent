@@ -9,9 +9,10 @@ import { runAgentTask } from './agent'
 import { AgentProposalRegistry, executeConfirmedActions } from './agent-proposals'
 import { getMailOverview } from './mail-overview'
 import {
-  executeAgentAction, getMail, getMailAttachment, getSentFolder, inspectAccountHealth, listMail, listMailFolders,
+  executeAgentAction, getMail, getMailAttachment, getSentFolder, inspectAccountHealth, listMailCached, listMailFolders,
   sendMail, testAccount, todayMail
 } from './mail'
+import { mailListCache } from './mail-cache'
 import { validateAccount } from './providers'
 import { MysqlStore } from './store'
 import { DailyDigestCoordinator } from './digest-scheduler'
@@ -44,6 +45,7 @@ export class BackendContext {
   invalidate(notify = true): void {
     this.agentJob?.controller.abort()
     this.proposals.clear()
+    mailListCache.clearScope(this.store.username)
     if (notify) this.emit('auth:expired', null)
     this.active = false
     this.store.logout()
@@ -179,6 +181,7 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
       store.accounts.filter((account) => account.id !== id),
       store.savedDrafts.filter((item) => item.draft.accountId !== id)
     )
+    mailListCache.clearAccount(store.username, id)
   })
   handlers.set('accounts:update-authorization', async (id: string, authorizationCode: string) => {
     const version = store.sessionVersion
@@ -223,7 +226,7 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
   })
   handlers.set('mail:list', async (accountId: string, folder: string, options?: MailListOptions) => {
     const version = store.sessionVersion
-    const result = await listMail(accountById(accountId), folder, options)
+    const result = await listMailCached(store.username, accountById(accountId), folder, options)
     requireSession(version)
     return result
   })
@@ -232,6 +235,7 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
     const version = store.sessionVersion
     const result = await getMail(accountById(accountId), folder, uid, markRead)
     requireSession(version)
+    if (markRead) mailListCache.markSeen(store.username, accountId, folder, uid)
     return result
   })
   handlers.set('mail:attachment', async (accountId: string, folder: string, uid: number,
@@ -247,7 +251,10 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
     requireSession(version)
     return result
   })
-  handlers.set('mail:send', (draft: MailDraft) => sendMail(accountById(draft.accountId), draft))
+  handlers.set('mail:send', async (draft: MailDraft) => {
+    await sendMail(accountById(draft.accountId), draft)
+    mailListCache.clearAccount(store.username, draft.accountId)
+  })
   handlers.set('drafts:list', () => store.savedDrafts)
   handlers.set('drafts:save', async (id: string, draft: MailDraft) => {
     const normalized = normalizeMailDraft(draft)
@@ -355,6 +362,7 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
     const results = await executeConfirmedActions(proposal.actions,
       (action) => executeAgentAction(accountById(action.mail.accountId), action),
       () => requireSession(version))
+    for (const action of proposal.actions) mailListCache.clearAccount(store.username, action.mail.accountId)
     const conversation = store.agentConversations.find((item) => item.id === proposal.conversationId)
     let historySaved = Boolean(conversation)
     if (conversation) {
