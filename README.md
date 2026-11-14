@@ -1,9 +1,18 @@
 # EmailAgent
 
-更新时间：2026-10-07
-更新内容：补充从 GitHub 下载桌面安装包及从源码启动的步骤。
+更新时间：2026-11-14
+更新内容：补充 CI/CD 流水线说明与状态徽章。
 
 面向课程作业的 Electron 桌面邮件助手，支持 QQ/163 邮箱、每日 AI 摘要、一句话写邮件与带来源的 Agent 对话。中文桌面界面连接独立 Node.js 后端，用户数据与会话保存在 Docker MySQL 中。邮箱授权码和 AI Key 按用户加密；使用 AI 功能时，所选邮件片段发送给用户配置的模型服务。
+
+## CI/CD 流水线
+
+[![Verify](https://github.com/Serenity-2026/EmailAgent/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/Serenity-2026/EmailAgent/actions/workflows/verify.yml)
+[![Release](https://github.com/Serenity-2026/EmailAgent/actions/workflows/release.yml/badge.svg)](https://github.com/Serenity-2026/EmailAgent/actions/workflows/release.yml)
+
+- **CI（Verify）**：每次 push、PR 或手动触发。`quality` 作业在 Ubuntu 上启动 MySQL 8.4 服务，依次执行 `npm ci`、类型检查、前端单元测试、后端集成测试和 Electron 构建；`desktop` 作业在 macOS 与 Windows 上分别打包并真实启动一次打包产物，两个平台的压缩包作为 artifact 保留 7 天。
+- **CD（Release）**：推送 `v*` 标签或手动触发。后端镜像构建后推送到 GHCR（`ghcr.io/serenity-2026/emailagent-backend`），macOS 与 Windows 桌面安装包构建完成后自动创建 GitHub Release 并上传 zip。
+- 发布新版本：`git tag v0.2.0 && git push origin v0.2.0`。
 
 ## 使用桌面应用
 
