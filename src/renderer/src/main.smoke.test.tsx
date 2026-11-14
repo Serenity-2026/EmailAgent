@@ -53,6 +53,8 @@ function apiFor(session: string | null, bootstrapRequired = false, demoMode = fa
     exportDiagnostics: vi.fn(async () => ({ saved: true, fileName: 'diagnostics.txt' })),
     getAiSettings: vi.fn(async () => ({ baseUrl: 'https://example.com/v1', model: 'model', dailyTime: '09:00', autoDaily: false, hasApiKey: true, activity: [] })),
     clearAiActivity: vi.fn(async () => undefined),
+    isFullscreen: vi.fn(async () => false),
+    onFullscreenChange: vi.fn(() => () => undefined),
     listAiModels: vi.fn(async () => ['model']), saveAiSettings: vi.fn(async () => undefined),
     testAiConnection: vi.fn(async () => undefined), generateDraft: vi.fn(), generateDigest: vi.fn(),
     listDigestHistory: vi.fn(async () => []), onDailyDigest: vi.fn(() => () => undefined),
