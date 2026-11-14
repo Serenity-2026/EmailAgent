@@ -333,4 +333,47 @@ describe('renderer critical paths', () => {
     await flush(); await flush()
     expect(vi.mocked(api.listMail).mock.calls.at(-1)?.[1]).toBe('INBOX')
   })
+
+  it('recovers from a daily digest failure after a manual retry', async () => {
+    const api = apiFor('dmc')
+    const errorMessage = '摘要服务暂时不可用'
+    const digestContent = '重试成功，今天有一封课程安排邮件。'
+    const generateDigest = vi.mocked(api.generateDigest)
+    generateDigest
+      .mockRejectedValueOnce(new Error(errorMessage))
+      .mockResolvedValueOnce({
+        date: '2026-11-11',
+        content: digestContent,
+        sources: [],
+        warnings: [],
+        generatedAt: '2026-11-11T09:00:00.000Z',
+        mode: 'manual'
+      })
+    window.emailAgent = api
+
+    const { EmailApp } = await import('./app/email-app')
+    const appRoot = createRoot(container)
+    root = appRoot
+    await act(async () => appRoot.render(<EmailApp themeMode="system" setThemeMode={() => undefined} dark={false} />))
+    await flush()
+
+    const digestButton = buttonNamed(container, '今日摘要')
+    expect(digestButton).toBeDefined()
+    await act(async () => digestButton?.click())
+    await flush()
+    expect(generateDigest).toHaveBeenCalledTimes(1)
+    expect(generateDigest).toHaveBeenNthCalledWith(1, [account.id])
+    expect(container.textContent).toContain(errorMessage)
+
+    const retryButton = buttonNamed(container, '立即重试')
+    expect(retryButton).toBeDefined()
+    await act(async () => retryButton?.click())
+    await flush()
+
+    expect(generateDigest).toHaveBeenCalledTimes(2)
+    expect(generateDigest).toHaveBeenNthCalledWith(2, [account.id])
+    expect(container.textContent).toContain(digestContent)
+    expect(container.textContent).not.toContain(errorMessage)
+    expect(buttonNamed(container, '立即重试')).toBeUndefined()
+  })
 })
