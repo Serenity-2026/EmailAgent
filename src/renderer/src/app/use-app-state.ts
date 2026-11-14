@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import type {
-  Account, AccountHealth, AccountInput, AgentConversation, AgentProposal, AiSettingsInput, DigestHistoryItem,
+  Account, AccountHealth, AccountInput, AgentConversation, AgentProposal, AiActivityEntry, AiSettingsInput, DigestHistoryItem,
   MailDetail, MailDraft, MailFolder, MailOverview, MailSearchQuery, MailSummary, SavedDraft
 } from '../../../shared/models'
 
@@ -50,7 +50,11 @@ export function useAccountSettingsState() {
   const [passwordBusy, setPasswordBusy] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsBusy, setSettingsBusy] = useState(false)
-  const [settings, setSettings] = useState<AiSettingsInput>({ baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false })
+  const [settings, setSettings] = useState<AiSettingsInput>({
+    baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false,
+    localOnly: false, features: { digest: true, draft: true, agent: true, topics: true }
+  })
+  const [aiActivity, setAiActivity] = useState<AiActivityEntry[]>([])
   const [hasAiKey, setHasAiKey] = useState(false)
   const [availableModels, setAvailableModels] = useState<string[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
@@ -65,6 +69,7 @@ export function useAccountSettingsState() {
     currentPassword, setCurrentPassword, nextPassword, setNextPassword, confirmNextPassword, setConfirmNextPassword,
     passwordBusy, setPasswordBusy, settingsOpen, setSettingsOpen, settingsBusy, setSettingsBusy,
     settings, setSettings, hasAiKey, setHasAiKey, availableModels, setAvailableModels,
+    aiActivity, setAiActivity,
     modelsLoading, setModelsLoading, settingsNotice, setSettingsNotice }
 }
 

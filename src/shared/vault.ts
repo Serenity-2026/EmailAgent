@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto'
-import type { Account, AgentConversation, AiSettingsInput, DigestHistoryItem, MailDraft, MailSummary, SavedDraft, ThemeMode } from './models'
+import type { Account, AgentConversation, AiActivityEntry, AiSettingsInput, DigestHistoryItem, MailDraft, MailSummary, SavedDraft, ThemeMode } from './models'
 
 export interface StoredAccount extends Account {
   authorizationCode: string
@@ -12,6 +12,7 @@ export interface StoredData {
   agentConversations?: AgentConversation[]
   savedDrafts?: SavedDraft[]
   themeMode?: ThemeMode
+  aiActivity?: AiActivityEntry[]
 }
 
 export interface UserVault {
@@ -29,11 +30,15 @@ export interface VaultFile {
 
 export const emptyData = (): StoredData => ({
   accounts: [],
-  ai: { baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false },
+  ai: {
+    baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false,
+    localOnly: false, features: { digest: true, draft: true, agent: true, topics: true }
+  },
   digestHistory: [],
   agentConversations: [],
   savedDrafts: [],
-  themeMode: 'system'
+  themeMode: 'system',
+  aiActivity: []
 })
 
 export function currentConversations(items: unknown): AgentConversation[] {
@@ -141,6 +146,22 @@ export function currentSavedDrafts(items: unknown): SavedDraft[] {
   }).slice(0, 20)
 }
 
+export function currentAiActivity(items: unknown): AiActivityEntry[] {
+  if (!Array.isArray(items)) return []
+  const features = new Set(['digest', 'draft', 'agent', 'topics'])
+  return (items as unknown[]).filter((item): item is AiActivityEntry => {
+    if (!item || typeof item !== 'object') return false
+    const entry = item as Record<string, unknown>
+    return typeof entry.at === 'string' && Number.isFinite(Date.parse(entry.at)) &&
+      typeof entry.feature === 'string' && features.has(entry.feature) &&
+      typeof entry.host === 'string' && entry.host.length <= 200 &&
+      Number.isSafeInteger(entry.mails) && Number(entry.mails) >= 0 &&
+      Number.isSafeInteger(entry.characters) && Number(entry.characters) >= 0 &&
+      typeof entry.ok === 'boolean' &&
+      (entry.skipped === undefined || (Number.isSafeInteger(entry.skipped) && Number(entry.skipped) >= 0))
+  }).slice(0, 20)
+}
+
 function isStoredData(value: unknown): value is StoredData {
   if (!value || typeof value !== 'object') return false
   const data = value as Record<string, unknown>
@@ -161,7 +182,7 @@ export function decryptVault(vault: UserVault, key: Buffer): StoredData {
   ]).toString('utf8')
   const parsed: unknown = JSON.parse(plain)
   if (!isStoredData(parsed)) throw new Error('配置格式无效')
-  return parsed
+  return { ...parsed, aiActivity: currentAiActivity(parsed.aiActivity) }
 }
 
 export function encryptVault(username: string, salt: string, key: Buffer, data: StoredData): UserVault {

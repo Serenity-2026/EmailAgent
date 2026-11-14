@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { complete, generateDigest, listAiModels, parseGeneratedDraft, resolveAiKey, validateAiSettings } from './ai'
+import { assertAiFeature, complete, generateDigest, listAiModels, parseGeneratedDraft, resolveAiKey, validateAiSettings } from './ai'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -87,5 +87,29 @@ describe('AI input and output boundaries', () => {
     }, 'system', 'user', controller.signal)
     controller.abort()
     await expect(running).rejects.toThrow('aborted')
+  })
+})
+
+describe('AI endpoint and feature boundaries', () => {
+  const base = { model: 'm', dailyTime: '09:00', autoDaily: false }
+
+  it('allows HTTP only for loopback endpoints and still requires a key elsewhere', () => {
+    expect(() => validateAiSettings({ ...base, baseUrl: 'http://127.0.0.1:11434/v1', apiKey: '' })).not.toThrow()
+    expect(() => validateAiSettings({ ...base, baseUrl: 'http://localhost:1234/v1', apiKey: '' })).not.toThrow()
+    expect(() => validateAiSettings({ ...base, baseUrl: 'http://192.168.1.10/v1', apiKey: 'key' })).toThrow()
+    expect(() => validateAiSettings({ ...base, baseUrl: 'https://api.example.com/v1', apiKey: '' })).toThrow(/API Key/)
+  })
+
+  it('refuses remote endpoints in local-only mode', () => {
+    const localOnly = { ...base, localOnly: true, apiKey: 'key' }
+    expect(() => validateAiSettings({ ...localOnly, baseUrl: 'https://api.example.com/v1' })).toThrow(/仅本机模型/)
+    expect(() => validateAiSettings({ ...localOnly, baseUrl: 'http://127.0.0.1:11434/v1' })).not.toThrow()
+  })
+
+  it('blocks a feature the user turned off', () => {
+    const settings = { baseUrl: 'https://x.example/v1', model: 'm', apiKey: 'k', dailyTime: '09:00', autoDaily: false }
+    expect(() => assertAiFeature({ ...settings, features: { digest: false } }, 'digest')).toThrow(/隐私设置/)
+    expect(() => assertAiFeature(settings, 'digest')).not.toThrow()
+    expect(() => assertAiFeature({ ...settings, features: { agent: false } }, 'agent')).toThrow(/对话检索/)
   })
 })

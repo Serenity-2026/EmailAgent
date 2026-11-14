@@ -1,12 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentConversation, AgentProgress, DigestHistoryItem, SavedDraft } from '../shared/models'
+import type { AgentConversation, AgentProgress, AiActivityEntry, AiSettingsInput, DigestHistoryItem, MailDetail, SavedDraft } from '../shared/models'
 import type { StoredAccount } from '../shared/vault'
 import type { MysqlStore } from './store'
 
 vi.mock('./agent', () => ({ runAgentTask: vi.fn() }))
 vi.mock('./ai', () => ({
   generateDigest: vi.fn(), generateDraft: vi.fn(), listAiModels: vi.fn(), resolveAiKey: vi.fn(),
-  testAiConnection: vi.fn(), validateAiSettings: vi.fn()
+  testAiConnection: vi.fn(), validateAiSettings: vi.fn(),
+  assertAiFeature: vi.fn((ai: { features?: Record<string, boolean> }, feature: string) => {
+    if (ai.features?.[feature] === false) throw new Error('已在隐私设置中关闭该功能的 AI 处理')
+  }),
+  aiHost: vi.fn(() => 'ai.example')
 }))
 vi.mock('./mail-overview', () => ({ getMailOverview: vi.fn() }))
 vi.mock('./mail', () => ({
@@ -31,16 +35,17 @@ const jobIds = [
   '123e4567-e89b-42d3-a456-426614174001'
 ]
 
-function contextWithHistory(history: AgentConversation[] = []): {
+function contextWithHistory(history: AgentConversation[] = [], ai: AiSettingsInput = settings): {
   context: BackendContext
   state: { active: boolean; version: number; accounts: StoredAccount[]; history: AgentConversation[]
-    digests: DigestHistoryItem[]; drafts: SavedDraft[] }
+    digests: DigestHistoryItem[]; drafts: SavedDraft[]; activity: AiActivityEntry[] }
   setAccounts: ReturnType<typeof vi.fn>
   setHistory: ReturnType<typeof vi.fn>
   setDigests: ReturnType<typeof vi.fn>
+  setActivity: ReturnType<typeof vi.fn>
 } {
   const state = { active: true, version: 0, accounts: [account], history,
-    digests: [] as DigestHistoryItem[], drafts: [] as SavedDraft[] }
+    digests: [] as DigestHistoryItem[], drafts: [] as SavedDraft[], activity: [] as AiActivityEntry[] }
   const setAccounts = vi.fn(async (items: StoredAccount[]) => { state.accounts = items })
   const setSavedDrafts = vi.fn(async (items: SavedDraft[]) => { state.drafts = items.slice(0, 20) })
   const setAccountsAndSavedDrafts = vi.fn(async (items: StoredAccount[], drafts: SavedDraft[]) => {
@@ -49,12 +54,13 @@ function contextWithHistory(history: AgentConversation[] = []): {
   })
   const setHistory = vi.fn(async (items: AgentConversation[]) => { state.history = items })
   const setDigests = vi.fn(async (items: DigestHistoryItem[]) => { state.digests = items })
+  const setActivity = vi.fn(async (items: AiActivityEntry[]) => { state.activity = items })
   const store = {
-    ai: settings, themeMode: 'system',
+    ai, themeMode: 'system',
     refresh: vi.fn(async () => undefined),
     logout: vi.fn(() => { state.active = false; state.version++ }),
     setAccounts, setSavedDrafts, setAccountsAndSavedDrafts,
-    setAgentConversations: setHistory, setDigestHistory: setDigests
+    setAgentConversations: setHistory, setDigestHistory: setDigests, setAiActivity: setActivity
   } as Record<string, unknown>
   Object.defineProperties(store, {
     activeUsername: { get: () => state.active ? 'dmc' : null },
@@ -62,9 +68,10 @@ function contextWithHistory(history: AgentConversation[] = []): {
     accounts: { get: () => state.accounts },
     savedDrafts: { get: () => state.drafts },
     agentConversations: { get: () => state.history },
-    digestHistory: { get: () => state.digests }
+    digestHistory: { get: () => state.digests },
+    aiActivity: { get: () => state.activity }
   })
-  return { context: new BackendContext(store as unknown as MysqlStore, 'token'), state, setAccounts, setHistory, setDigests }
+  return { context: new BackendContext(store as unknown as MysqlStore, 'token'), state, setAccounts, setHistory, setDigests, setActivity }
 }
 
 function blockedAgent(stage: Omit<AgentProgress, 'jobId'>['stage']): Promise<void> {
@@ -283,5 +290,32 @@ describe('BackendContext attachment access', () => {
     expect(getMailAttachment).toHaveBeenCalledWith(account, 'INBOX', 7, '55', 'attachment-1')
     await expect(context.invoke('mail:attachment', ['missing', 'INBOX', 7, '55', 'attachment-1']))
       .rejects.toThrow('邮箱账户不存在')
+  })
+})
+
+describe('AI privacy boundaries', () => {
+  const detail = (uid: number, subject: string, text: string): MailDetail => ({
+    uid, accountId: account.id, folder: 'INBOX', uidValidity: '1', from: 'teacher@example.com',
+    subject, date: '2026-11-14T02:00:00.000Z', unread: false, to: 'student@qq.com', text,
+    html: '', inlineImages: [], attachments: []
+  })
+
+  it('skips verification-code mail and records the outbound activity', async () => {
+    const { context, state } = contextWithHistory()
+    vi.mocked(todayMail).mockResolvedValue({ messages: [
+      detail(1, '验证码 123456', '您的验证码是 123456，请勿告诉他人'),
+      detail(2, '课程报告', '周五提交')
+    ], warnings: [] })
+    vi.mocked(generateDigest).mockResolvedValue({ date: '2026-11-14', content: '摘要', sources: [], warnings: [] })
+    await context.invoke('ai:digest', [[account.id]])
+    expect(vi.mocked(generateDigest).mock.calls[0][2].map((mail) => mail.subject)).toEqual(['课程报告'])
+    expect(state.digests[0].warnings.join()).toContain('跳过 1 封')
+    expect(state.activity[0]).toMatchObject({ feature: 'digest', mails: 1, ok: true, host: 'ai.example' })
+  })
+
+  it('refuses a feature the user turned off', async () => {
+    const { context } = contextWithHistory([], { ...settings, features: { digest: false } } satisfies AiSettingsInput)
+    await expect(context.invoke('ai:digest', [[account.id]])).rejects.toThrow('隐私设置')
+    expect(generateDigest).not.toHaveBeenCalled()
   })
 })

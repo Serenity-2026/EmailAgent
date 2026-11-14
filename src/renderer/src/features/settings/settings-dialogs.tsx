@@ -1,24 +1,36 @@
 import React from 'react'
-import { Alert, Button, Input, Modal, Select, Switch } from 'antd'
-import type { Account, AccountHealth, AccountInput, AiSettingsInput, Provider, ThemeMode } from '../../../../shared/models'
+import { Alert, Button, Checkbox, Input, Modal, Select, Switch } from 'antd'
+import type { Account, AccountHealth, AccountInput, AiActivityEntry, AiFeature, AiSettingsInput, Provider, ThemeMode } from '../../../../shared/models'
+
+const AI_FEATURES: Array<{ key: AiFeature; label: string }> = [
+  { key: 'digest', label: '邮件摘要' },
+  { key: 'draft', label: '起草邮件' },
+  { key: 'agent', label: '对话检索' },
+  { key: 'topics', label: '内容星图' }
+]
+
+const AI_FEATURE_LABELS: Record<AiFeature, string> = {
+  digest: '邮件摘要', draft: '起草邮件', agent: '对话检索', topics: '内容星图'
+}
 
 export function SettingsDialogs({ error, themeMode, accountSettingsOpen, accountOpen, accountBusy, accountForm,
   accounts, accountHealth, accountHealthBusy, authorizationOpen, authorizationAccount, authorizationCode, authorizationBusy,
   userOpen, userBusy, newUserName, newUserPassword, confirmPassword,
   passwordOpen, passwordBusy, currentPassword, nextPassword, confirmNextPassword,
-  aiOpen, aiBusy, aiSettings, hasAiKey, models, modelsLoading, notice, hasAccount,
+  aiOpen, aiBusy, aiSettings, hasAiKey, aiActivity, models, modelsLoading, notice, hasAccount,
   onTheme, onAccountSettingsOpen, onOpenAi, onOpenAccount, onOpenUser, onOpenPassword, onRemoveAccount, onExportDiagnostics, onLogout,
   onCheckAccount, onOpenAuthorization, onAuthorizationOpen, onAuthorizationCode, onUpdateAuthorization,
   onAccountOpen, onAccountForm, onAddAccount, onUserOpen, onNewUserName, onNewUserPassword, onConfirmPassword,
   onCreateUser, onPasswordOpen, onCurrentPassword, onNextPassword, onConfirmNextPassword, onChangePassword,
-  onAiOpen, onAiSettings, onModels, onLoadModels, onSaveAi }: {
+  onAiOpen, onAiSettings, onModels, onLoadModels, onSaveAi, onClearActivity }: {
   error: string; themeMode: ThemeMode; accountSettingsOpen: boolean; accountOpen: boolean; accountBusy: boolean
   accountForm: AccountInput; accounts: Account[]; accountHealth: Record<string, AccountHealth>; accountHealthBusy: string[]
   authorizationOpen: boolean; authorizationAccount?: Account; authorizationCode: string; authorizationBusy: boolean
   userOpen: boolean; userBusy: boolean; newUserName: string; newUserPassword: string
   confirmPassword: string; passwordOpen: boolean; passwordBusy: boolean; currentPassword: string
   nextPassword: string; confirmNextPassword: string; aiOpen: boolean; aiBusy: boolean
-  aiSettings: AiSettingsInput; hasAiKey: boolean; models: string[]; modelsLoading: boolean; notice: string
+  aiSettings: AiSettingsInput; hasAiKey: boolean; aiActivity: AiActivityEntry[]; models: string[]
+  modelsLoading: boolean; notice: string
   hasAccount: boolean; onTheme: (mode: ThemeMode) => void; onAccountSettingsOpen: (open: boolean) => void
   onOpenAi: () => void; onOpenAccount: () => void; onOpenUser: () => void; onOpenPassword: () => void
   onRemoveAccount: () => Promise<void>; onExportDiagnostics: () => void; onLogout: () => void; onAccountOpen: (open: boolean) => void
@@ -31,7 +43,7 @@ export function SettingsDialogs({ error, themeMode, accountSettingsOpen, account
   onCurrentPassword: (value: string) => void; onNextPassword: (value: string) => void
   onConfirmNextPassword: (value: string) => void; onChangePassword: () => void; onAiOpen: (open: boolean) => void
   onAiSettings: (value: AiSettingsInput) => void; onModels: (models: string[]) => void
-  onLoadModels: () => void; onSaveAi: () => void
+  onLoadModels: () => void; onSaveAi: () => void; onClearActivity: () => void
 }): React.JSX.Element {
   return <>
     <Modal open={accountSettingsOpen} title="设置" footer={null} onCancel={() => onAccountSettingsOpen(false)} destroyOnHidden>
@@ -131,7 +143,43 @@ export function SettingsDialogs({ error, themeMode, accountSettingsOpen, account
           onChange={(model: string) => onAiSettings({ ...aiSettings, model })} />
         <Button loading={modelsLoading} onClick={onLoadModels}>加载模型</Button>
       </div></div>
-      <p className="field-help">生成摘要时，邮件正文片段会发送给你配置的 AI 服务。</p>
+      <p className="field-help">开启后，邮件摘要、起草、对话和内容星图会把相关邮件正文发送到上面的接口。验证码和账户安全类邮件会在本机跳过，不会外发。</p>
+      <div className="field"><label>允许 AI 处理的内容</label>
+        <div className="ai-features">
+          {AI_FEATURES.map((feature) => (
+            <Checkbox key={feature.key} checked={aiSettings.features?.[feature.key] !== false}
+              onChange={(event) => onAiSettings({
+                ...aiSettings,
+                features: { ...aiSettings.features, [feature.key]: event.target.checked }
+              })}>{feature.label}</Checkbox>
+          ))}
+        </div>
+        <p className="field-help">关闭后对应功能不再调用 AI，邮件内容保持在本机。</p>
+      </div>
+      <div className="field"><label>仅使用本机模型</label>
+        <Switch checked={Boolean(aiSettings.localOnly)}
+          onChange={(checked) => onAiSettings({ ...aiSettings, localOnly: checked })} />
+        <p className="field-help">开启后只允许 127.0.0.1、localhost 或 ::1，邮件不会离开本机。Ollama 可填 http://127.0.0.1:11434/v1，密钥可留空。</p>
+      </div>
+      <div className="field"><label>最近外发记录</label>
+        {aiActivity.length === 0
+          ? <p className="field-help">还没有向 AI 发送过邮件内容。</p>
+          : <div className="ai-activity">
+            {aiActivity.slice(0, 6).map((item, index) => (
+              <div className="ai-activity-row" key={`${item.at}-${index}`}>
+                <span className="ai-activity-time">
+                  {new Date(item.at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <span>{AI_FEATURE_LABELS[item.feature]}</span>
+                <span className="ai-activity-host">{item.host}</span>
+                <span>{item.mails ? `${item.mails} 封` : '—'}</span>
+                <span className={item.ok ? 'ok' : 'failed'}>{item.ok ? '成功' : '失败'}</span>
+              </div>
+            ))}
+            <Button size="small" onClick={onClearActivity}>清除记录</Button>
+          </div>}
+        <p className="field-help">只记录时间、功能、目标主机和邮件数量，不记录邮件内容。</p>
+      </div>
       <div className="field"><label>每日摘要时间</label><Input type="time" value={aiSettings.dailyTime}
         onChange={(event) => onAiSettings({ ...aiSettings, dailyTime: event.target.value })} /></div>
       <div className="field"><label>应用运行时自动生成</label><Switch checked={aiSettings.autoDaily}

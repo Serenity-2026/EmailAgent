@@ -1,13 +1,17 @@
 import { randomUUID } from 'node:crypto'
 import type {
   AccountHealth, AccountInput, AgentCancelResult, AgentConfirmResult, AgentConversation, AgentMessage, AgentProgress,
-  AiSettingsInput, DigestHistoryItem, MailDraft, MailListOptions, ThemeMode
+  AiActivityEntry, AiSettingsInput, DigestHistoryItem, MailDraft, MailListOptions, ThemeMode
 } from '../shared/models'
 import { normalizeMailDraft, type StoredAccount } from '../shared/vault'
-import { generateDigest as summarize, generateDraft, listAiModels, resolveAiKey, testAiConnection, validateAiSettings } from './ai'
+import {
+  aiHost, assertAiFeature, generateDigest as summarize, generateDraft, listAiModels, resolveAiKey, testAiConnection,
+  validateAiSettings
+} from './ai'
 import { runAgentTask } from './agent'
 import { AgentProposalRegistry, executeConfirmedActions } from './agent-proposals'
 import { getMailOverview } from './mail-overview'
+import { splitSensitiveMails } from './privacy'
 import {
   executeAgentAction, getMail, getMailAttachment, getSentFolder, inspectAccountHealth, listMailCached, listMailFolders,
   sendMail, testAccount, todayMail
@@ -112,9 +116,21 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
     if (store.sessionVersion !== version || !store.activeUsername) throw new Error('登录状态已变化，请重试')
   }
 
+  async function recordAiActivity(feature: AiActivityEntry['feature'], settings: AiSettingsInput,
+    info: { mails: number; characters: number; skipped?: number; ok: boolean }): Promise<void> {
+    if (!settings.baseUrl) return
+    const entry: AiActivityEntry = {
+      at: new Date().toISOString(), feature, host: aiHost(settings.baseUrl),
+      mails: info.mails, characters: info.characters, ok: info.ok,
+      ...(info.skipped ? { skipped: info.skipped } : {})
+    }
+    try { await store.setAiActivity([entry, ...store.aiActivity]) } catch { /* 记录失败不影响主流程 */ }
+  }
+
   async function digestFor(accountIds: string[], mode: 'manual' | 'auto'): Promise<DigestHistoryItem> {
     const version = store.sessionVersion
     const settings = store.ai
+    assertAiFeature(settings, 'digest')
     const now = new Date()
     const date = zonedClock(now, context.timeZone).date
     if (mode === 'auto') {
@@ -135,8 +151,19 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
     }).sort((a, b) => a.date.localeCompare(b.date))
     if (results.every((result) => result.status === 'rejected')) throw new Error('所有邮箱的今日邮件读取失败，请检查连接')
     requireSession(version)
-    const digest = await summarize(settings, date, mail)
+    const { kept, skipped } = splitSensitiveMails(mail)
+    if (skipped) warnings.push(`已按隐私设置跳过 ${skipped} 封疑似含验证码或账户信息的邮件`)
+    let digest
+    try {
+      digest = await summarize(settings, date, kept)
+    } catch (error) {
+      await recordAiActivity('digest', settings, { mails: kept.length, characters: 0, skipped, ok: false })
+      throw error
+    }
     requireSession(version)
+    await recordAiActivity('digest', settings, {
+      mails: kept.length, characters: kept.reduce((sum, item) => sum + item.text.length, 0), skipped, ok: true
+    })
     const record: DigestHistoryItem = { ...digest, warnings, generatedAt: new Date().toISOString(), mode }
     await context.mutate(async () => {
       requireSession(version)
@@ -276,8 +303,9 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
   })
   handlers.set('ai:settings:get', () => {
     const { apiKey: _key, ...view } = store.ai
-    return { ...view, hasApiKey: Boolean(store.ai.apiKey) }
+    return { ...view, hasApiKey: Boolean(store.ai.apiKey), activity: store.aiActivity }
   })
+  handlers.set('ai:activity:clear', async () => { await store.setAiActivity([]) })
   handlers.set('ai:models', (baseUrl: string, apiKey: string) =>
     listAiModels(baseUrl.trim(), resolveAiKey(baseUrl, apiKey, store.ai)))
   handlers.set('ai:settings:save', async (input: AiSettingsInput) => {
@@ -301,8 +329,16 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
   handlers.set('ai:draft', async (instruction: string, accountId: string) => {
     const version = store.sessionVersion
     accountById(accountId)
-    const draft = await generateDraft(store.ai, instruction, accountId)
+    assertAiFeature(store.ai, 'draft')
+    let draft
+    try {
+      draft = await generateDraft(store.ai, instruction, accountId)
+    } catch (error) {
+      await recordAiActivity('draft', store.ai, { mails: 0, characters: instruction.length, ok: false })
+      throw error
+    }
     requireSession(version)
+    await recordAiActivity('draft', store.ai, { mails: 0, characters: instruction.length, ok: true })
     return draft
   })
   handlers.set('ai:digest', (accountIds: string[]) => digestFor(accountIds, 'manual'))
@@ -316,7 +352,8 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
       const cached = overviewCache.get(store.username, accounts)
       if (cached) return cached
     }
-    const overview = await getMailOverview(accounts, store.ai, () => requireSession(version))
+    const overview = await getMailOverview(accounts, store.ai, () => requireSession(version),
+      (info) => { void recordAiActivity('topics', store.ai, info) })
     requireSession(version)
     overviewCache.set(store.username, accounts, overview)
     return overview
@@ -332,6 +369,7 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
     const accounts = [...store.accounts]
     const existing = conversationId ? store.agentConversations.find((item) => item.id === conversationId) : undefined
     if (conversationId && !existing) throw new Error('对话不存在或已过期')
+    assertAiFeature(store.ai, 'agent')
     const job = context.beginAgentJob(jobId, version)
     try {
       const result = await runAgentTask(store.ai, prompt, accounts, existing, (progress) => {
@@ -356,10 +394,12 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
       })
       context.ensureAgentJob(job)
       const proposal = result.actions.length ? agentProposals.create(version, id, result.actions) : undefined
+      await recordAiActivity('agent', store.ai, { mails: result.sources.length, characters: 0, ok: true })
       context.finishAgentJob(job, 'completed', '任务已完成')
       return { conversation, scope: result.scope, truncated: result.truncated, warnings: result.warnings, proposal }
     } catch (error) {
       const cancelled = job.controller.signal.aborted
+      if (!cancelled) await recordAiActivity('agent', store.ai, { mails: 0, characters: 0, ok: false })
       context.finishAgentJob(job, cancelled ? 'cancelled' : 'failed', cancelled ? '任务已取消' : '任务执行失败')
       if (cancelled) throw new Error('Agent 任务已取消')
       throw error
