@@ -39,6 +39,7 @@ const api: DesktopApi = {
   getAiSettings: () => invoke('ai:settings:get'),
   listAiModels: (baseUrl, apiKey) => invoke('ai:models', baseUrl, apiKey),
   saveAiSettings: (input) => invoke('ai:settings:save', input),
+  clearAiActivity: () => invoke('ai:activity:clear'),
   testAiConnection: () => invoke('ai:settings:test'),
   generateDraft: (instruction, accountId) => invoke('ai:draft', instruction, accountId),
   generateDigest: (accountIds) => invoke('ai:digest', accountIds),

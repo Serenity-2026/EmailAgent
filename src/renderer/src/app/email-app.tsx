@@ -66,7 +66,7 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     confirmPassword, setConfirmPassword, userBusy, setUserBusy, passwordOpen, setPasswordOpen,
     currentPassword, setCurrentPassword, nextPassword, setNextPassword, confirmNextPassword, setConfirmNextPassword,
     passwordBusy, setPasswordBusy, settingsOpen, setSettingsOpen, settingsBusy, setSettingsBusy,
-    settings, setSettings, hasAiKey, setHasAiKey, availableModels, setAvailableModels,
+    settings, setSettings, hasAiKey, setHasAiKey, availableModels, setAvailableModels, aiActivity, setAiActivity,
     modelsLoading, setModelsLoading, settingsNotice, setSettingsNotice } = useAccountSettingsState()
   const { folder, setFolder, view, setView, mails, setMails, selected, setSelected, detail, setDetail,
     folders, setFolders, folderAccountId, setFolderAccountId, foldersLoading, setFoldersLoading,
@@ -642,8 +642,10 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       const current = await api.getAiSettings()
       if (epoch !== sessionEpoch.current) return
       setSettings({ baseUrl: current.baseUrl, model: current.model, apiKey: '',
-        dailyTime: current.dailyTime, autoDaily: current.autoDaily })
+        dailyTime: current.dailyTime, autoDaily: current.autoDaily,
+        localOnly: Boolean(current.localOnly), features: current.features || {} })
       setHasAiKey(current.hasApiKey)
+      setAiActivity(current.activity || [])
       setAvailableModels(current.model ? [current.model] : [])
       setSettingsNotice(notice)
       setSettingsOpen(true)
@@ -665,6 +667,15 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       if (epoch === sessionEpoch.current) setError(errorText(err))
     } finally {
       if (epoch === sessionEpoch.current) setSettingsBusy(false)
+    }
+  }
+
+  async function clearAiActivity(): Promise<void> {
+    try {
+      await api.clearAiActivity()
+      setAiActivity([])
+    } catch (err) {
+      setError(errorText(err))
     }
   }
 
@@ -1127,7 +1138,7 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       userOpen={userOpen} userBusy={userBusy} newUserName={newUserName} newUserPassword={newUserPassword}
       confirmPassword={confirmPassword} passwordOpen={passwordOpen} passwordBusy={passwordBusy}
       currentPassword={currentPassword} nextPassword={nextPassword} confirmNextPassword={confirmNextPassword}
-      aiOpen={settingsOpen} aiBusy={settingsBusy} aiSettings={settings} hasAiKey={hasAiKey}
+      aiOpen={settingsOpen} aiBusy={settingsBusy} aiSettings={settings} hasAiKey={hasAiKey} aiActivity={aiActivity}
       models={availableModels} modelsLoading={modelsLoading} notice={settingsNotice} hasAccount={Boolean(accountId)}
       onTheme={(mode) => void changeTheme(mode)} onAccountSettingsOpen={setAccountSettingsOpen}
       onOpenAi={() => { setAccountSettingsOpen(false); void openSettings() }}
@@ -1145,7 +1156,7 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       onPasswordOpen={setPasswordOpen} onCurrentPassword={setCurrentPassword} onNextPassword={setNextPassword}
       onConfirmNextPassword={setConfirmNextPassword} onChangePassword={() => void changePassword()}
       onAiOpen={setSettingsOpen} onAiSettings={setSettings} onModels={setAvailableModels}
-      onLoadModels={() => void loadModels()} onSaveAi={() => void saveSettings()} />
+      onLoadModels={() => void loadModels()} onSaveAi={() => void saveSettings()} onClearActivity={() => void clearAiActivity()} />
 
     <ComposeDialogs error={error} accounts={accounts} promptOpen={promptOpen} prompt={prompt}
       promptBusy={promptBusy} composeOpen={composeOpen} preview={composePreview} composeBusy={composeBusy}

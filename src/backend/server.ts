@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { API_CHANNELS, validateRpc } from '../shared/api'
 import { Database } from './database'
 import { MysqlStore } from './store'
+import { aiFeatureEnabled } from '../shared/models'
 import { BackendContext } from './service'
 import { LoginAttemptLimiter } from './login-limiter'
 
@@ -140,7 +141,8 @@ export function createBackendServer(db: Database, options: { loginLimiter?: Logi
         session.key.fill(0)
         const settings = context.store.ai
         const now = new Date()
-        if (!settings.autoDaily || !settings.apiKey || !context.store.accounts.length) return
+        if (!settings.autoDaily || !aiFeatureEnabled(settings, 'digest') || !settings.baseUrl || !settings.model ||
+          !context.store.accounts.length) return
         const claim = context.dailyDigest.claim(now, context.timeZone, settings.dailyTime, context.store.digestHistory)
         if (!claim) return
         try {

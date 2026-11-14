@@ -4,7 +4,8 @@ export const API_CHANNELS = [
   'mail:folders', 'mail:list', 'mail:get', 'mail:attachment', 'mail:sent-folder', 'mail:send',
   'drafts:list', 'drafts:save', 'drafts:remove',
   'ai:settings:get', 'ai:models', 'ai:settings:save', 'ai:settings:test', 'ai:draft', 'ai:digest', 'ai:digest:history',
-  'agent:history', 'agent:overview', 'agent:run', 'agent:cancel', 'agent:confirm', 'agent:clear', 'theme:get', 'theme:set'
+  'agent:history', 'agent:overview', 'agent:run', 'agent:cancel', 'agent:confirm', 'agent:clear', 'theme:get', 'theme:set',
+  'ai:activity:clear'
 ] as const
 
 export function validateRpc(channel: string, args: unknown[]): void {
@@ -15,7 +16,7 @@ export function validateRpc(channel: string, args: unknown[]): void {
   let valid = false
   switch (channel) {
     case 'auth:bootstrap-status': case 'auth:session': case 'auth:logout': case 'accounts:list': case 'ai:settings:get': case 'ai:settings:test':
-    case 'ai:digest:history': case 'drafts:list':
+    case 'ai:digest:history': case 'ai:activity:clear': case 'drafts:list':
     case 'agent:history': case 'agent:clear': case 'theme:get': valid = args.length === 0; break
     case 'agent:overview': {
       const options = args[0]
@@ -63,7 +64,12 @@ export function validateRpc(channel: string, args: unknown[]): void {
     }
     case 'ai:settings:save': {
       const input = args[0]
-      valid = args.length === 1 && object(input) && ['baseUrl', 'apiKey', 'model', 'dailyTime'].every((key) => string(input[key])) && typeof input.autoDaily === 'boolean'
+      const features = input && object(input) ? input.features : undefined
+      valid = args.length === 1 && object(input) && ['baseUrl', 'apiKey', 'model', 'dailyTime'].every((key) => string(input[key])) &&
+        typeof input.autoDaily === 'boolean' &&
+        (input.localOnly === undefined || typeof input.localOnly === 'boolean') &&
+        (features === undefined || (object(features) && ['digest', 'draft', 'agent', 'topics']
+          .every((key) => features[key] === undefined || typeof features[key] === 'boolean')))
       break
     }
     case 'mail:send': case 'drafts:save': {

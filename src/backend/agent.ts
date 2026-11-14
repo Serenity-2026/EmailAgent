@@ -2,6 +2,7 @@ import type {
   AgentAction, AgentActionKind, AgentConversation, AgentMailRef, AgentProgress, MailDraft
 } from '../shared/models'
 import { complete } from './ai'
+import { isSensitiveMail } from './privacy'
 import { readAgentMailBatch, searchAgentMail, type AgentSearchFilters } from './mail'
 import { validateRecipient } from './providers'
 import type { StoredAccount } from '../shared/vault'
@@ -197,10 +198,16 @@ export async function runAgentTask(
     throw new Error('所有邮箱检索失败，请检查连接')
   }
   matches.sort((a, b) => b.date.localeCompare(a.date))
+  const sensitive = matches.filter((mail) => isSensitiveMail(mail.subject))
+  if (sensitive.length) warnings.push(`已按隐私设置跳过 ${sensitive.length} 封疑似含验证码或账户信息的邮件`)
+  matches.splice(0, matches.length, ...matches.filter((mail) => !isSensitiveMail(mail.subject)))
   if (matches.length > 30) truncated = true
   const candidates = matches.slice(0, 200)
   if (!candidates.length) {
-    return { answer: '在当前检索范围内没有找到匹配的邮件。', sources: [], actions: [], scope, truncated, warnings }
+    const answer = sensitive.length
+      ? '匹配的邮件均为验证码或账户信息类，已按隐私设置跳过，未发送给 AI。'
+      : '在当前检索范围内没有找到匹配的邮件。'
+    return { answer, sources: [], actions: [], scope, truncated, warnings }
   }
 
   progress({ stage: 'reading', detail: `找到 ${matches.length} 封邮件，正在选择相关内容` })
@@ -226,8 +233,13 @@ export async function runAgentTask(
       return
     }
     for (const result of batch.value) {
-      if (result.text !== undefined) evidence.push({ mail: result.mail, text: result.text })
-      else warnings.push(`${result.mail.subject}：${result.error || '读取失败'}`)
+      if (result.text !== undefined) {
+        if (isSensitiveMail(result.mail.subject, result.text)) {
+          warnings.push(`已按隐私设置跳过「${result.mail.subject}」`)
+          continue
+        }
+        evidence.push({ mail: result.mail, text: result.text })
+      } else warnings.push(`${result.mail.subject}：${result.error || '读取失败'}`)
     }
   })
   evidence.sort((a, b) => selected.findIndex((item) => item.accountId === a.mail.accountId && item.folder === a.mail.folder && item.uid === a.mail.uid) -

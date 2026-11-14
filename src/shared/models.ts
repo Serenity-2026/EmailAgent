@@ -118,16 +118,35 @@ export interface SavedDraft {
   draft: MailDraft
 }
 
+export type AiFeature = 'digest' | 'draft' | 'agent' | 'topics'
+
 export interface AiSettingsInput {
   baseUrl: string
   model: string
   apiKey: string
   dailyTime: string
   autoDaily: boolean
+  localOnly?: boolean
+  features?: Partial<Record<AiFeature, boolean>>
+}
+
+export interface AiActivityEntry {
+  at: string
+  feature: AiFeature
+  host: string
+  mails: number
+  characters: number
+  ok: boolean
+  skipped?: number
+}
+
+export function aiFeatureEnabled(settings: Pick<AiSettingsInput, 'features'>, feature: AiFeature): boolean {
+  return settings.features?.[feature] !== false
 }
 
 export interface AiSettingsView extends Omit<AiSettingsInput, 'apiKey'> {
   hasApiKey: boolean
+  activity: AiActivityEntry[]
 }
 
 export interface DailyDigest {
@@ -264,6 +283,7 @@ export interface DesktopApi {
   getAiSettings(): Promise<AiSettingsView>
   listAiModels(baseUrl: string, apiKey: string): Promise<string[]>
   saveAiSettings(input: AiSettingsInput): Promise<void>
+  clearAiActivity(): Promise<void>
   testAiConnection(): Promise<void>
   generateDraft(instruction: string, accountId: string): Promise<MailDraft>
   generateDigest(accountIds: string[]): Promise<DigestHistoryItem>
