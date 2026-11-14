@@ -12,6 +12,8 @@
 .agent-messages { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 16px; padding: 26px 34px 10px; }
 .agent-overview { width: min(100%, 880px); padding: 0 0 20px; border-bottom: 1px solid var(--rule); background: transparent; }
 .agent-overview-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.agent-overview-actions { display: flex; align-items: center; gap: 8px; }
+.agent-overview.is-collapsed { padding-bottom: 12px; }
 .agent-overview-head strong { color: var(--ink); font-family: var(--font-serif); font-size: 18px; font-weight: 600; }
 .overview-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-bottom: 18px; }
 .overview-metrics div { display: flex; align-items: baseline; gap: 7px; padding: 0; border-radius: 0; background: transparent; color: var(--muted); font-size: 12px; }

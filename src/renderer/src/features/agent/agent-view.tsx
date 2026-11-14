@@ -19,6 +19,16 @@ export function AgentView({ conversations, conversationId, activeConversation, b
 }): React.JSX.Element {
   const chartRef = React.useRef<HTMLDivElement | null>(null)
   const [chartKey, setChartKey] = React.useState(0)
+  const [overviewCollapsed, setOverviewCollapsed] = React.useState(() => {
+    try { return window.sessionStorage.getItem('agent-overview-collapsed') === '1' } catch { return false }
+  })
+  const toggleOverview = (): void => {
+    setOverviewCollapsed((value) => {
+      const next = !value
+      try { window.sessionStorage.setItem('agent-overview-collapsed', next ? '1' : '0') } catch { /* Storage unavailable. */ }
+      return next
+    })
+  }
   React.useEffect(() => {
     const target = chartRef.current
     if (!target || typeof ResizeObserver === 'undefined') return
@@ -51,10 +61,15 @@ export function AgentView({ conversations, conversationId, activeConversation, b
     </div>
     <div className="agent-chat">
       <div className="agent-messages" ref={messagesRef}>
-        <div className="agent-overview">
+        <div className={`agent-overview${overviewCollapsed ? ' is-collapsed' : ''}`}>
           <div className="agent-overview-head"><strong>最近 30 天</strong>
-            <Button size="small" loading={overviewLoading} onClick={() => onLoadOverview(true)}>刷新</Button></div>
-          {overviewLoading && !overview ? <div className="top-spinner"><Spin /></div> : overviewError ?
+            <div className="agent-overview-actions">
+              {!overviewCollapsed && <Button size="small" loading={overviewLoading}
+                onClick={() => onLoadOverview(true)}>刷新</Button>}
+              <Button size="small" aria-expanded={!overviewCollapsed} onClick={toggleOverview}>
+                {overviewCollapsed ? '展开' : '收起'}</Button>
+            </div></div>
+          {overviewCollapsed ? null : overviewLoading && !overview ? <div className="top-spinner"><Spin /></div> : overviewError ?
             <Alert type="error" message={overviewError} /> : overview && <>
               <div className="overview-metrics">
                 <div><span>收到</span><strong>{overview.received}</strong><span>封</span></div>

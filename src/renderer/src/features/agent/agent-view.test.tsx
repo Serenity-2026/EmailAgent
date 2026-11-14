@@ -10,6 +10,7 @@ describe('Agent cancellation controls', () => {
 
   beforeEach(() => {
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    window.sessionStorage.clear()
     container = document.createElement('div')
     document.body.append(container)
     Object.defineProperty(window, 'matchMedia', { configurable: true, value: vi.fn(() => ({
@@ -71,6 +72,27 @@ describe('Agent cancellation controls', () => {
     expect(citation?.textContent).toBe('[1]')
     await act(async () => citation?.click())
     expect(openSource).toHaveBeenCalledOnce()
+    await act(async () => root.unmount())
+  })
+
+  it('collapses and restores the 30-day overview', async () => {
+    const root = createRoot(container)
+    const overview = { since: new Date().toISOString(), received: 126, sent: 3, sampled: false,
+      topSenders: [], topRecipients: [], topics: [], warnings: [] }
+    await act(async () => root.render(<AgentView conversations={[]} conversationId="" busy={false} status=""
+      proposal={null} prompt="" overview={overview} overviewLoading={false} overviewError="" dark={false}
+      accountCount={1} messagesRef={{ current: null }} onClear={() => undefined}
+      onSelectConversation={() => undefined} onLoadOverview={() => undefined} onOpenSource={() => undefined}
+      onOpenDraft={() => undefined} onConfirm={async () => undefined} onPrompt={() => undefined}
+      onRun={() => undefined} onCancel={() => undefined} />))
+    expect(container.textContent).toContain('126')
+    const button = (label: string): HTMLButtonElement | undefined =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((item) => item.textContent?.replace(/\s/g, '') === label)
+    await act(async () => button('收起')?.click())
+    expect(container.textContent).not.toContain('126')
+    expect(container.querySelector('.agent-overview')?.className).toContain('is-collapsed')
+    await act(async () => button('展开')?.click())
+    expect(container.textContent).toContain('126')
     await act(async () => root.unmount())
   })
 })
