@@ -2,7 +2,7 @@ import type { AiSettingsInput, AgentMailRef, MailOverview } from '../shared/mode
 import { aiFeatureEnabled } from '../shared/models'
 import { complete } from './ai'
 import { readAgentMailBatch, searchAgentMail } from './mail'
-import { isSensitiveMail } from './privacy'
+import { applyPrivacy } from './privacy'
 import type { StoredAccount } from '../shared/vault'
 
 function topPeople(addresses: string[]): { address: string; count: number }[] {
@@ -100,9 +100,19 @@ export async function getMailOverview(
     warnings.push('近期邮件正文无法读取，未生成内容星图')
     return overview
   }
-  const safeEvidence = evidence.filter((item) => !isSensitiveMail(item.mail.subject, item.text))
-  const skipped = evidence.length - safeEvidence.length
+  const safeEvidence: typeof evidence = []
+  let skipped = 0
+  let masked = 0
+  for (const item of evidence) {
+    const decision = applyPrivacy(settings.privacy, item.mail.subject, item.text)
+    if (decision.action === 'block') { skipped += 1; continue }
+    if (decision.action === 'mask') {
+      masked += 1
+      safeEvidence.push({ ...item, text: decision.text })
+    } else safeEvidence.push(item)
+  }
   if (skipped) warnings.push(`已按隐私设置跳过 ${skipped} 封疑似含验证码或账户信息的邮件`)
+  if (masked) warnings.push(`已按隐私设置对 ${masked} 封邮件脱敏后发送`)
   if (!safeEvidence.length) {
     warnings.push('近期邮件均为验证码或账户信息类，未生成内容星图')
     return overview

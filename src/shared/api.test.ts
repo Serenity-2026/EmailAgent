@@ -49,6 +49,13 @@ describe('RPC request validation', () => {
     expect(() => validateRpc('agent:overview', [{}, 'extra'])).toThrow('请求参数无效')
   })
 
+  it('validates the sensitive mail policy values', () => {
+    const base = { baseUrl: 'https://example.com/v1', model: 'model', apiKey: 'key', dailyTime: '09:00', autoDaily: false }
+    expect(() => validateRpc('ai:settings:save', [{ ...base, privacy: { code: 'mask', finance: 'block', identity: 'allow' } }])).not.toThrow()
+    expect(() => validateRpc('ai:settings:save', [{ ...base, privacy: { code: 'encrypt' } }])).toThrow('请求参数无效')
+    expect(() => validateRpc('ai:settings:save', [{ ...base, privacy: ['block'] }])).toThrow('请求参数无效')
+  })
+
   it('accepts a reply identity only when all nested values are valid', () => {
     const draft = { accountId: 'account', to: ['one@example.com'], cc: [], bcc: [], subject: '回复', text: '正文',
       replyTo: { uid: 7, folder: 'INBOX', uidValidity: '22' } }
