@@ -4,7 +4,7 @@
 .agent-history-head button { padding: 0; border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; }
 .agent-history-head button:hover { color: var(--accent); }
 .agent-history-head button:disabled { opacity: .4; cursor: not-allowed; }
-.agent-history-item { display: block; width: 100%; overflow: hidden; margin-bottom: 1px; padding: 8px 10px; border: 0; border-radius: 2px; background: transparent; color: var(--ink-soft); font-size: 12.5px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.agent-history-item { display: block; width: 100%; overflow: hidden; margin-bottom: 1px; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-soft); font-size: 12.5px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .agent-history-item:hover { background: var(--hover); color: var(--ink); }
 .agent-history-item.active { background: var(--selected); color: var(--ink); box-shadow: inset 2px 0 var(--accent); }
 
@@ -25,7 +25,7 @@
 
 .agent-message { width: min(100%, 880px); max-width: none; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: var(--ink-soft); font-size: 14px; }
 .agent-message.assistant .agent-message-text { max-width: 40em; line-height: 1.72; }
-.agent-message.user { justify-self: end; width: auto; max-width: min(82%, 640px); padding: 9px 13px; border: 1px solid var(--rule); border-radius: 2px; background: var(--surface); color: var(--ink); }
+.agent-message.user { justify-self: end; width: auto; max-width: min(82%, 640px); padding: 9px 13px; border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); color: var(--ink); }
 .agent-message-text { overflow-wrap: anywhere; line-height: 1.7; }
 .agent-message-text.is-plain { white-space: pre-wrap; }
 .agent-inline-source { padding: 0 1px; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 10px; vertical-align: super; cursor: pointer; }
@@ -38,8 +38,8 @@
 .agent-sources button { padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--accent); font-size: 11.5px; text-align: left; cursor: pointer; }
 .agent-sources button:hover { background: transparent; text-decoration: underline; }
 .agent-progress { display: flex; align-items: center; gap: 8px; color: var(--muted); font-family: var(--font-mono); font-size: 11px; }
-.agent-proposal { display: grid; justify-items: start; gap: 6px; width: min(100%, 880px); max-width: none; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 2px; background: var(--surface); color: var(--ink-soft); font-size: 12.5px; }
+.agent-proposal { display: grid; justify-items: start; gap: 6px; width: min(100%, 880px); max-width: none; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); color: var(--ink-soft); font-size: 12.5px; }
 .agent-proposal strong { color: var(--faint); font-family: var(--font-mono); font-size: 10.5px; font-weight: 500; letter-spacing: .06em; }
 .agent-confirm-list { display: grid; gap: 8px; max-height: 320px; overflow-y: auto; font-size: 12.5px; }
 .agent-compose { flex: none; display: flex; align-items: flex-end; gap: 10px; padding: 14px 34px 20px; border-top: 1px solid var(--rule); background: var(--paper); }
-.agent-compose .ant-input { flex: 1; min-height: 64px; background: var(--surface); font-size: 13px; border-radius: 2px; }
+.agent-compose .ant-input { flex: 1; min-height: 64px; background: var(--surface); font-size: 13px; border-radius: 8px; }

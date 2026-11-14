@@ -30,7 +30,7 @@ export function AppRoot(): React.JSX.Element {
       colorTextBase: dark ? '#f1ede1' : '#1a1915',
       colorBorder: dark ? '#3a372a' : '#d8d1bf',
       colorBorderSecondary: dark ? '#2e2c22' : '#e4ddcb',
-      borderRadius: 2,
+      borderRadius: 6,
       fontFamily,
       fontSize: 13,
       controlHeight: 32
