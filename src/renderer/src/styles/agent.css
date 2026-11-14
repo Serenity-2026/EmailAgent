@@ -45,3 +45,21 @@
 .agent-confirm-list { display: grid; gap: 8px; max-height: 320px; overflow-y: auto; font-size: 12.5px; }
 .agent-compose { flex: none; display: flex; align-items: flex-end; gap: 10px; padding: 14px 34px 20px; border-top: 1px solid var(--rule); background: var(--paper); }
 .agent-compose .ant-input { flex: 1; min-height: 64px; background: var(--surface); font-size: 13px; border-radius: 8px; }
+
+.agent-steps { display: grid; gap: 6px; margin: 10px 0 0; }
+.agent-step { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 8px; align-items: start; }
+.agent-step-dot { width: 6px; height: 6px; margin-top: 6px; border-radius: 50%; background: var(--faint); }
+.agent-step.is-running .agent-step-dot { background: var(--accent); animation: agent-pulse 1.2s ease-in-out infinite; }
+.agent-step.is-done .agent-step-dot { background: var(--ink-soft); }
+.agent-step.is-failed .agent-step-dot { background: var(--mark); }
+.agent-step-body { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.agent-step-label { font-size: 12px; font-weight: 600; color: var(--ink); }
+.agent-step-detail { font-size: 12px; color: var(--muted); }
+.agent-step.is-running .agent-step-detail { color: var(--accent); }
+.agent-step.is-failed .agent-step-detail { color: var(--mark); }
+.agent-live { margin: 0 0 10px; padding: 10px 12px; border-left: 2px solid var(--accent); background: var(--surface); }
+.agent-live-head { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; color: var(--muted); }
+.agent-steps-log { margin-top: 10px; }
+.agent-steps-log summary { cursor: pointer; font-size: 11.5px; color: var(--muted); }
+.agent-steps-log summary:hover { color: var(--ink); }
+@keyframes agent-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .25 } }

@@ -383,7 +383,7 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
         ...(existing?.messages || []),
         { id: randomUUID(), role: 'user', content: prompt.trim(), createdAt },
         { id: randomUUID(), role: 'assistant', content: result.answer, createdAt,
-          sources: result.sources, draft: result.draft, scope: result.scope,
+          sources: result.sources, draft: result.draft, steps: result.steps, scope: result.scope,
           truncated: result.truncated, warnings: result.warnings }
       ]
       const conversation: AgentConversation = { id, updatedAt: createdAt, messages }

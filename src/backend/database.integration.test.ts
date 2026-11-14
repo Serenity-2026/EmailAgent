@@ -281,7 +281,7 @@ describe.skipIf(process.env.EMAILAGENT_MYSQL_TEST !== '1')('MySQL backend integr
       progress({ stage: 'planning', detail: '处理中' }); started()
       await new Promise<void>((resolve) => { release = resolve })
       ensureActive!()
-      return { answer: '回答', sources: [], actions: [], warnings: [], truncated: false, scope: '近期' }
+      return { answer: '回答', sources: [], actions: [], warnings: [], truncated: false, scope: '近期', steps: [] }
     })
     const task = rpc('agent:run', ['总结邮件', '', randomUUID()], token)
     await waiting

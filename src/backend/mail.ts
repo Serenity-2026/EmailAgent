@@ -540,6 +540,7 @@ export interface AgentSearchFilters {
   before?: Date
   from?: string
   subject?: string
+  text?: string
   unread?: boolean
 }
 
@@ -569,6 +570,7 @@ export async function searchAgentMail(account: StoredAccount, filters: AgentSear
             ...(filters.before ? { before: filters.before } : {}),
             ...(filters.from ? { from: filters.from } : {}),
             ...(filters.subject ? { subject: filters.subject } : {}),
+            ...(filters.text ? { text: filters.text } : {}),
             ...(filters.unread === undefined ? {} : { seen: !filters.unread })
           }
           const found = await client.search(query, { uid: true })

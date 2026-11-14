@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import type {
-  Account, AccountHealth, AccountInput, AgentConversation, AgentProposal, AiActivityEntry, AiSettingsInput, DigestHistoryItem,
+  Account, AccountHealth, AccountInput, AgentConversation, AgentProposal, AgentStep, AiActivityEntry, AiSettingsInput, DigestHistoryItem,
   MailDetail, MailDraft, MailFolder, MailOverview, MailSearchQuery, MailSummary, SavedDraft
 } from '../../../shared/models'
 
@@ -133,6 +133,7 @@ export function useAgentState() {
   const [agentJobId, setAgentJobId] = useState('')
   const agentJobIdRef = useRef('')
   const [agentStatus, setAgentStatus] = useState('')
+  const [agentSteps, setAgentSteps] = useState<AgentStep[]>([])
   const [agentProposal, setAgentProposal] = useState<AgentProposal | null>(null)
   const [overview, setOverview] = useState<MailOverview | null>(null)
   const [overviewLoading, setOverviewLoading] = useState(false)
@@ -142,7 +143,7 @@ export function useAgentState() {
   const overviewShown = useRef(false)
   return { agentConversations, setAgentConversations, agentConversationId, setAgentConversationId,
     agentPrompt, setAgentPrompt, agentBusy, setAgentBusy, agentJobId, setAgentJobId, agentJobIdRef,
-    agentStatus, setAgentStatus,
+    agentStatus, setAgentStatus, agentSteps, setAgentSteps,
     agentProposal, setAgentProposal, overview, setOverview, overviewLoading, setOverviewLoading,
     overviewError, setOverviewError, agentMessagesRef, agentScrollState, overviewShown }
 }
