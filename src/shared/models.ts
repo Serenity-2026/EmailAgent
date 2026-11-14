@@ -120,6 +120,18 @@ export interface SavedDraft {
 
 export type AiFeature = 'digest' | 'draft' | 'agent' | 'topics'
 
+export type SensitiveCategory = 'code' | 'finance' | 'identity'
+export type SensitiveAction = 'block' | 'mask' | 'allow'
+export type SensitivePolicy = Record<SensitiveCategory, SensitiveAction>
+
+export const SENSITIVE_CATEGORIES: Array<{ key: SensitiveCategory; label: string; description: string }> = [
+  { key: 'code', label: '验证码与密码', description: '登录/校验码、动态码、一次性口令、重置密码' },
+  { key: 'finance', label: '金融账户', description: '银行卡、信用卡、账单、发票、账号与路由号' },
+  { key: 'identity', label: '证件信息', description: '身份证、护照号码' }
+]
+
+export const DEFAULT_SENSITIVE_POLICY: SensitivePolicy = { code: 'block', finance: 'block', identity: 'block' }
+
 export interface AiSettingsInput {
   baseUrl: string
   model: string
@@ -128,6 +140,7 @@ export interface AiSettingsInput {
   autoDaily: boolean
   localOnly?: boolean
   features?: Partial<Record<AiFeature, boolean>>
+  privacy?: Partial<SensitivePolicy>
 }
 
 export interface AiActivityEntry {

@@ -65,11 +65,14 @@ export function validateRpc(channel: string, args: unknown[]): void {
     case 'ai:settings:save': {
       const input = args[0]
       const features = input && object(input) ? input.features : undefined
+      const privacy = input && object(input) ? input.privacy : undefined
       valid = args.length === 1 && object(input) && ['baseUrl', 'apiKey', 'model', 'dailyTime'].every((key) => string(input[key])) &&
         typeof input.autoDaily === 'boolean' &&
         (input.localOnly === undefined || typeof input.localOnly === 'boolean') &&
         (features === undefined || (object(features) && ['digest', 'draft', 'agent', 'topics']
-          .every((key) => features[key] === undefined || typeof features[key] === 'boolean')))
+          .every((key) => features[key] === undefined || typeof features[key] === 'boolean'))) &&
+        (privacy === undefined || (object(privacy) && ['code', 'finance', 'identity']
+          .every((key) => privacy[key] === undefined || privacy[key] === 'block' || privacy[key] === 'mask' || privacy[key] === 'allow')))
       break
     }
     case 'mail:send': case 'drafts:save': {

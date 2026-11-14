@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto'
-import type { Account, AgentConversation, AiActivityEntry, AiSettingsInput, DigestHistoryItem, MailDraft, MailSummary, SavedDraft, ThemeMode } from './models'
+import type { Account, AgentConversation, AiActivityEntry, AiSettingsInput, DigestHistoryItem, MailDraft, MailSummary, SavedDraft, SensitivePolicy, ThemeMode } from './models'
+import { DEFAULT_SENSITIVE_POLICY } from './models'
 
 export interface StoredAccount extends Account {
   authorizationCode: string
@@ -32,7 +33,7 @@ export const emptyData = (): StoredData => ({
   accounts: [],
   ai: {
     baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false,
-    localOnly: false, features: { digest: true, draft: true, agent: true, topics: true }
+    localOnly: false, features: { digest: true, draft: true, agent: true, topics: true }, privacy: { ...DEFAULT_SENSITIVE_POLICY }
   },
   digestHistory: [],
   agentConversations: [],
@@ -146,6 +147,17 @@ export function currentSavedDrafts(items: unknown): SavedDraft[] {
   }).slice(0, 20)
 }
 
+export function currentSensitivePolicy(value: unknown): SensitivePolicy {
+  const policy = { ...DEFAULT_SENSITIVE_POLICY }
+  if (!value || typeof value !== 'object') return policy
+  const raw = value as Record<string, unknown>
+  for (const key of Object.keys(policy) as Array<keyof SensitivePolicy>) {
+    const action = raw[key]
+    if (action === 'block' || action === 'mask' || action === 'allow') policy[key] = action
+  }
+  return policy
+}
+
 export function currentAiActivity(items: unknown): AiActivityEntry[] {
   if (!Array.isArray(items)) return []
   const features = new Set(['digest', 'draft', 'agent', 'topics'])
@@ -182,7 +194,11 @@ export function decryptVault(vault: UserVault, key: Buffer): StoredData {
   ]).toString('utf8')
   const parsed: unknown = JSON.parse(plain)
   if (!isStoredData(parsed)) throw new Error('配置格式无效')
-  return { ...parsed, aiActivity: currentAiActivity(parsed.aiActivity) }
+  return {
+    ...parsed,
+    ai: { ...parsed.ai, privacy: currentSensitivePolicy(parsed.ai?.privacy) },
+    aiActivity: currentAiActivity(parsed.aiActivity)
+  }
 }
 
 export function encryptVault(username: string, salt: string, key: Buffer, data: StoredData): UserVault {

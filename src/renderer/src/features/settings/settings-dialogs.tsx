@@ -1,6 +1,7 @@
 import React from 'react'
 import { Alert, Button, Checkbox, Input, Modal, Select, Switch } from 'antd'
 import type { Account, AccountHealth, AccountInput, AiActivityEntry, AiFeature, AiSettingsInput, Provider, ThemeMode } from '../../../../shared/models'
+import { SENSITIVE_CATEGORIES } from '../../../../shared/models'
 
 const AI_FEATURES: Array<{ key: AiFeature; label: string }> = [
   { key: 'digest', label: '邮件摘要' },
@@ -129,7 +130,7 @@ export function SettingsDialogs({ error, themeMode, accountSettingsOpen, account
         <Button type="primary" loading={passwordBusy} onClick={onChangePassword}>保存新密码</Button></div>
     </Modal>
 
-    <Modal open={aiOpen} title="AI 设置" footer={null} onCancel={() => onAiOpen(false)} destroyOnHidden>
+    <Modal open={aiOpen} title="AI 设置" footer={null} onCancel={() => onAiOpen(false)} zIndex={1100} destroyOnHidden>
       {error && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
       {notice && <Alert type="info" message={notice} style={{ marginBottom: 16 }} />}
       <div className="field"><label>接口基础地址</label><Input value={aiSettings.baseUrl} placeholder="https://example.com/v1"
@@ -143,7 +144,7 @@ export function SettingsDialogs({ error, themeMode, accountSettingsOpen, account
           onChange={(model: string) => onAiSettings({ ...aiSettings, model })} />
         <Button loading={modelsLoading} onClick={onLoadModels}>加载模型</Button>
       </div></div>
-      <p className="field-help">开启后，邮件摘要、起草、对话和内容星图会把相关邮件正文发送到上面的接口。验证码和账户安全类邮件会在本机跳过，不会外发。</p>
+      <p className="field-help">开启后，邮件摘要、起草、对话和内容星图会把相关邮件正文发送到上面的接口。命中下方敏感规则的邮件按所选方式处理。</p>
       <div className="field"><label>允许 AI 处理的内容</label>
         <div className="ai-features">
           {AI_FEATURES.map((feature) => (
@@ -160,6 +161,28 @@ export function SettingsDialogs({ error, themeMode, accountSettingsOpen, account
         <Switch checked={Boolean(aiSettings.localOnly)}
           onChange={(checked) => onAiSettings({ ...aiSettings, localOnly: checked })} />
         <p className="field-help">开启后只允许 127.0.0.1、localhost 或 ::1，邮件不会离开本机。Ollama 可填 http://127.0.0.1:11434/v1，密钥可留空。</p>
+      </div>
+      <div className="field"><label>敏感邮件处理</label>
+        <div className="ai-policy">
+          {SENSITIVE_CATEGORIES.map((item) => (
+            <div className="ai-policy-row" key={item.key}>
+              <div className="ai-policy-text"><strong>{item.label}</strong><span>{item.description}</span></div>
+              <div className="ai-policy-actions">
+                <Checkbox checked={aiSettings.privacy?.[item.key] === 'block'}
+                  onChange={(event) => onAiSettings({
+                    ...aiSettings,
+                    privacy: { ...aiSettings.privacy, [item.key]: event.target.checked ? 'block' : 'allow' }
+                  })}>拦截</Checkbox>
+                <Checkbox checked={aiSettings.privacy?.[item.key] === 'mask'}
+                  onChange={(event) => onAiSettings({
+                    ...aiSettings,
+                    privacy: { ...aiSettings.privacy, [item.key]: event.target.checked ? 'mask' : 'allow' }
+                  })}>脱敏发送</Checkbox>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="field-help">勾选拦截则该类邮件不离开本机；勾选脱敏发送则先隐藏验证码、卡号与证件号再交给 AI；都不勾选则直接发送。</p>
       </div>
       <div className="field"><label>最近外发记录</label>
         {aiActivity.length === 0

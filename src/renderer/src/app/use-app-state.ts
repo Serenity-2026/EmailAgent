@@ -52,7 +52,8 @@ export function useAccountSettingsState() {
   const [settingsBusy, setSettingsBusy] = useState(false)
   const [settings, setSettings] = useState<AiSettingsInput>({
     baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false,
-    localOnly: false, features: { digest: true, draft: true, agent: true, topics: true }
+    localOnly: false, features: { digest: true, draft: true, agent: true, topics: true },
+    privacy: { code: 'block', finance: 'block', identity: 'block' }
   })
   const [aiActivity, setAiActivity] = useState<AiActivityEntry[]>([])
   const [hasAiKey, setHasAiKey] = useState(false)

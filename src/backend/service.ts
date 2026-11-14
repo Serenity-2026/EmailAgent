@@ -11,7 +11,8 @@ import {
 import { runAgentTask } from './agent'
 import { AgentProposalRegistry, executeConfirmedActions } from './agent-proposals'
 import { getMailOverview } from './mail-overview'
-import { splitSensitiveMails } from './privacy'
+import { applyPrivacy } from './privacy'
+import { currentSensitivePolicy } from '../shared/vault'
 import {
   executeAgentAction, getMail, getMailAttachment, getSentFolder, inspectAccountHealth, listMailCached, listMailFolders,
   sendMail, testAccount, todayMail
@@ -151,8 +152,19 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
     }).sort((a, b) => a.date.localeCompare(b.date))
     if (results.every((result) => result.status === 'rejected')) throw new Error('所有邮箱的今日邮件读取失败，请检查连接')
     requireSession(version)
-    const { kept, skipped } = splitSensitiveMails(mail)
+    const kept: typeof mail = []
+    let skipped = 0
+    let masked = 0
+    for (const item of mail) {
+      const decision = applyPrivacy(settings.privacy, item.subject, item.text)
+      if (decision.action === 'block') { skipped += 1; continue }
+      if (decision.action === 'mask') {
+        masked += 1
+        kept.push({ ...item, subject: decision.subject, text: decision.text })
+      } else kept.push(item)
+    }
     if (skipped) warnings.push(`已按隐私设置跳过 ${skipped} 封疑似含验证码或账户信息的邮件`)
+    if (masked) warnings.push(`已按隐私设置对 ${masked} 封邮件脱敏后发送`)
     let digest
     try {
       digest = await summarize(settings, date, kept)
@@ -314,7 +326,8 @@ async function handleRpc(context: BackendContext, channel: string, args: unknown
       ...input,
       baseUrl: input.baseUrl.trim().replace(/\/+$/, ''),
       model: input.model.trim(),
-      apiKey: resolveAiKey(input.baseUrl, input.apiKey, store.ai)
+      apiKey: resolveAiKey(input.baseUrl, input.apiKey, store.ai),
+      privacy: currentSensitivePolicy(input.privacy)
     }
     validateAiSettings(settings)
     await testAiConnection(settings)

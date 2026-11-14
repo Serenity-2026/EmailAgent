@@ -403,7 +403,8 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     setDraftSnapshot('')
     setDraftSaving(false)
     setAccountForm({ provider: 'qq', address: '', authorizationCode: '' })
-    setSettings({ baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false })
+    setSettings({ baseUrl: '', model: '', apiKey: '', dailyTime: '09:00', autoDaily: false,
+      privacy: { code: 'block', finance: 'block', identity: 'block' } })
     setHasAiKey(false)
     setAvailableModels([])
     pendingSource.current = null
@@ -660,7 +661,8 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       if (epoch !== sessionEpoch.current) return
       setSettings({ baseUrl: current.baseUrl, model: current.model, apiKey: '',
         dailyTime: current.dailyTime, autoDaily: current.autoDaily,
-        localOnly: Boolean(current.localOnly), features: current.features || {} })
+        localOnly: Boolean(current.localOnly), features: current.features || {},
+        privacy: current.privacy })
       setHasAiKey(current.hasApiKey)
       setAiActivity(current.activity || [])
       setAvailableModels(current.model ? [current.model] : [])

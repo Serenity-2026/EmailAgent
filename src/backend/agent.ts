@@ -2,7 +2,7 @@ import type {
   AgentAction, AgentActionKind, AgentConversation, AgentMailRef, AgentProgress, AgentStep, MailDraft
 } from '../shared/models'
 import { complete } from './ai'
-import { isSensitiveMail } from './privacy'
+import { applyPrivacy } from './privacy'
 import { listMailFolders, readAgentMailBatch, searchAgentMail, type AgentSearchFilters } from './mail'
 import { validateRecipient } from './providers'
 import type { StoredAccount } from '../shared/vault'
@@ -116,8 +116,11 @@ export function parseAgentAnswer(raw: string, refs: AgentMailRef[], prompt: stri
     !Number.isInteger(item) || item < 1 || item > refs.length)) {
     throw new Error('AI 返回了无效的邮件引用')
   }
-  const cited = [...new Set(value.citations as number[])]
   const inlineRefs = [...value.answer.matchAll(/\[(\d+)\]/g)].map((match) => Number(match[1]))
+  let cited = [...new Set(value.citations as number[])]
+  if (!cited.length && inlineRefs.length) {
+    cited = [...new Set(inlineRefs.filter((index) => index >= 1 && index <= refs.length))]
+  }
   if (inlineRefs.some((index) => !cited.includes(index)) ||
     (refs.length && !allowUncited && (!cited.length || !inlineRefs.length))) {
     throw new Error('AI 回答缺少可核实的邮件引用')
@@ -305,6 +308,7 @@ export async function runAgentTask(
   const history: Array<{ tool: string; result?: unknown; error?: string }> = []
   let truncated = false
   let skippedSensitive = 0
+  let maskedSensitive = 0
   let toolDraft: MailDraft | undefined
   let toolActions: AgentAction[] = []
   let failures = 0
@@ -362,7 +366,7 @@ export async function runAgentTask(
     }
 
     if (call.kind === 'final') {
-      const parsed = parseAgentAnswer(JSON.stringify(call.value), refs, prompt, skippedSensitive > 0)
+      const parsed = parseAgentAnswer(JSON.stringify(call.value), refs, prompt, skippedSensitive > 0 || maskedSensitive > 0)
       if (parsed.sources.some((source) => source.citationNumber !== undefined && blocked.has(source.citationNumber))) {
         warnings.push('回答中的部分引用来自已按隐私设置跳过的邮件，仅保留主题与发件人信息')
       }
@@ -371,6 +375,7 @@ export async function runAgentTask(
         all.findIndex((item) => item.kind === action.kind && item.mail.accountId === action.mail.accountId &&
           item.mail.folder === action.mail.folder && item.mail.uid === action.mail.uid) === index)
       if (skippedSensitive) warnings.push(`已按隐私设置跳过 ${skippedSensitive} 封疑似含验证码或账户信息的邮件`)
+      if (maskedSensitive) warnings.push(`已按隐私设置对 ${maskedSensitive} 封邮件脱敏后发送`)
       return {
         answer: parsed.answer,
         sources: parsed.sources,
@@ -420,11 +425,12 @@ export async function runAgentTask(
           warnings.push(...item.value.warnings)
           if (item.value.truncated) truncated = true
           for (const mail of item.value.matches) {
-            if (isSensitiveMail(mail.subject)) { skippedSensitive += 1; skippedThisSearch += 1; continue }
+            const decision = applyPrivacy(settings.privacy, mail.subject)
+            if (decision.action === 'block') { skippedSensitive += 1; skippedThisSearch += 1; continue }
             const key = keyOf(mail)
             if (refIndex.has(key)) continue
             if (refs.length >= 200) { truncated = true; continue }
-            refs.push(mail)
+            refs.push(decision.action === 'mask' ? { ...mail, subject: decision.subject } : mail)
             refIndex.set(key, refs.length)
             added.push(refs.length)
           }
@@ -457,13 +463,20 @@ export async function runAgentTask(
               mail.folder === entry.mail.folder && mail.accountId === entry.mail.accountId) + 1
             if (!number) continue
             if (entry.error) result.push({ number, error: entry.error })
-            else if (entry.text && isSensitiveMail(entry.mail.subject, entry.text)) {
-              blocked.add(number)
-              skippedSensitive += 1
-              result.push({ number, skipped: '已按隐私设置跳过' })
-            } else {
-              readTexts.set(number, entry.text || '')
-              result.push({ number, text: entry.text })
+            else {
+              const decision = applyPrivacy(settings.privacy, entry.mail.subject, entry.text || '')
+              if (decision.action === 'block') {
+                blocked.add(number)
+                skippedSensitive += 1
+                result.push({ number, skipped: '已按隐私设置跳过' })
+              } else if (decision.action === 'mask') {
+                maskedSensitive += 1
+                readTexts.set(number, decision.text)
+                result.push({ number, text: decision.text, masked: true })
+              } else {
+                readTexts.set(number, entry.text || '')
+                result.push({ number, text: entry.text })
+              }
             }
           }
         }
@@ -502,6 +515,7 @@ export async function runAgentTask(
   }
   if (skippedSensitive || !refs.length) {
     if (skippedSensitive) warnings.push(`已按隐私设置跳过 ${skippedSensitive} 封疑似含验证码或账户信息的邮件`)
+    if (maskedSensitive) warnings.push(`已按隐私设置对 ${maskedSensitive} 封邮件脱敏后发送`)
     return {
       answer: skippedSensitive
         ? '检索到的相关邮件属于验证码或账户信息类，已按隐私设置在本机跳过，内容没有发送给 AI，因此无法提供其中的验证码或账户细节。'
