@@ -178,4 +178,15 @@ describe('Agent tool loop', () => {
     await expect(running).rejects.toThrow('aborted')
     expect(searchAgentMail).not.toHaveBeenCalled()
   })
+
+  it('explains that blocked matches are never sent to the model', async () => {
+    vi.mocked(complete).mockResolvedValue(JSON.stringify({ action: 'search_mail', args: { subject: '验证码' } }))
+    vi.mocked(searchAgentMail).mockResolvedValue({ ...emptySearch,
+      matches: [{ ...mail(1), subject: '登录验证码 123456' }], counts: { inbox: 1, sent: 0 } })
+    const result = await runAgentTask(settings, '告诉我验证码', [account], undefined, () => undefined,
+      () => undefined, new AbortController().signal)
+    expect(result.answer).toContain('验证码')
+    expect(result.answer).toContain('跳过')
+    expect(result.warnings.join(' ')).toContain('跳过 1 封')
+  })
 })

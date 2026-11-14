@@ -105,7 +105,7 @@ function requestedActions(prompt: string): Set<AgentActionKind> {
   return allowed
 }
 
-export function parseAgentAnswer(raw: string, refs: AgentMailRef[], prompt: string): {
+export function parseAgentAnswer(raw: string, refs: AgentMailRef[], prompt: string, allowUncited = false): {
   answer: string; sources: AgentMailRef[]; draft?: MailDraft; actions: AgentAction[]; warnings: string[]
 } {
   const value = jsonObject(raw)
@@ -118,8 +118,10 @@ export function parseAgentAnswer(raw: string, refs: AgentMailRef[], prompt: stri
   }
   const cited = [...new Set(value.citations as number[])]
   const inlineRefs = [...value.answer.matchAll(/\[(\d+)\]/g)].map((match) => Number(match[1]))
-  if ((refs.length && (!cited.length || !inlineRefs.length)) ||
-    inlineRefs.some((index) => !cited.includes(index))) throw new Error('AI 回答缺少可核实的邮件引用')
+  if (inlineRefs.some((index) => !cited.includes(index)) ||
+    (refs.length && !allowUncited && (!cited.length || !inlineRefs.length))) {
+    throw new Error('AI 回答缺少可核实的邮件引用')
+  }
   const sources = cited.map((index) => ({ ...refs[index - 1], citationNumber: index }))
   let draft: MailDraft | undefined
   if (value.draft !== undefined && value.draft !== null) {
@@ -211,6 +213,7 @@ function toolSystemPrompt(now: Date): string {
     '- answer 中的 [n] 必须出现在 citations 里，n 是 mails 列表中的编号。',
     '- 找不到符合条件的邮件就直说，不要编造；连续两次检索没有结果时应直接 final 结束。',
     '- 引用正文细节前应先 read_mail；步数不够时在 answer 里说明只依据主题判断、未核对正文。',
+    '- 如果检索结果里 skipped 大于 0 且没有新增邮件，说明命中内容属于验证码或账户信息类，已被本机拦截；应直接 final 告诉用户这部分邮件不会外发，不要换关键词反复检索。',
     `- 最多 ${MAX_TOOL_STEPS} 步，每步只做一个动作。`
   ].join('\n')
 }
@@ -359,9 +362,10 @@ export async function runAgentTask(
     }
 
     if (call.kind === 'final') {
-      const parsed = parseAgentAnswer(JSON.stringify(call.value), refs, prompt)
-      const blockedSources = parsed.sources.filter((source) => source.citationNumber !== undefined && blocked.has(source.citationNumber))
-      if (blockedSources.length) throw new Error('AI 引用了已按隐私设置跳过的邮件，请重试')
+      const parsed = parseAgentAnswer(JSON.stringify(call.value), refs, prompt, skippedSensitive > 0)
+      if (parsed.sources.some((source) => source.citationNumber !== undefined && blocked.has(source.citationNumber))) {
+        warnings.push('回答中的部分引用来自已按隐私设置跳过的邮件，仅保留主题与发件人信息')
+      }
       const draft = parsed.draft || toolDraft
       const actions = [...parsed.actions, ...toolActions].filter((action, index, all) =>
         all.findIndex((item) => item.kind === action.kind && item.mail.accountId === action.mail.accountId &&
@@ -407,6 +411,7 @@ export async function runAgentTask(
         lastSearch = searchKey
         const settled = await Promise.allSettled(selected.map((account) => searchAgentMail(account, filters)))
         const added: number[] = []
+        let skippedThisSearch = 0
         settled.forEach((item, index) => {
           if (item.status === 'rejected') {
             warnings.push(`${selected[index].address} 检索失败`)
@@ -415,7 +420,7 @@ export async function runAgentTask(
           warnings.push(...item.value.warnings)
           if (item.value.truncated) truncated = true
           for (const mail of item.value.matches) {
-            if (isSensitiveMail(mail.subject)) { skippedSensitive += 1; continue }
+            if (isSensitiveMail(mail.subject)) { skippedSensitive += 1; skippedThisSearch += 1; continue }
             const key = keyOf(mail)
             if (refIndex.has(key)) continue
             if (refs.length >= 200) { truncated = true; continue }
@@ -428,7 +433,7 @@ export async function runAgentTask(
         const scope = scopeText(selected, filters)
         if (!scopeParts.includes(scope)) scopeParts.push(scope)
         finishStep(step, `命中 ${added.length} 封，累计 ${refs.length} 封`)
-        history.push({ tool, result: { numbers: added, total: refs.length, truncated } })
+        history.push({ tool, result: { numbers: added, total: refs.length, truncated, skipped: skippedThisSearch } })
       } else if (tool === 'read_mail') {
         const numbers = args.numbers
         if (!Array.isArray(numbers) || !numbers.length || numbers.length > 10 ||
@@ -495,10 +500,12 @@ export async function runAgentTask(
       if (failures >= 3) throw error
     }
   }
-  if (!refs.length) {
+  if (skippedSensitive || !refs.length) {
     if (skippedSensitive) warnings.push(`已按隐私设置跳过 ${skippedSensitive} 封疑似含验证码或账户信息的邮件`)
     return {
-      answer: '在当前检索范围内没有找到匹配的邮件。可以换一个关键词、放宽时间范围，或指定发件人再试。',
+      answer: skippedSensitive
+        ? '检索到的相关邮件属于验证码或账户信息类，已按隐私设置在本机跳过，内容没有发送给 AI，因此无法提供其中的验证码或账户细节。'
+        : '在当前检索范围内没有找到匹配的邮件。可以换一个关键词、放宽时间范围，或指定发件人再试。',
       sources: [],
       draft: undefined,
       actions: [],
