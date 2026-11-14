@@ -82,7 +82,7 @@ function blockedAgent(stage: Omit<AgentProgress, 'jobId'>['stage']): Promise<voi
     started()
     await new Promise<void>((resolve) => signal?.addEventListener('abort', () => resolve(), { once: true }))
     ensureActive?.()
-    return { answer: '不应保存', sources: [], actions: [], warnings: [], truncated: false, scope: '测试' }
+    return { answer: '不应保存', sources: [], actions: [], warnings: [], truncated: false, scope: '测试', steps: [] }
   })
   return ready
 }

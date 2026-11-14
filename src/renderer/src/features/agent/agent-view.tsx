@@ -1,15 +1,27 @@
 import React from 'react'
 import { Button, Empty, Input, Modal, Spin, Alert } from 'antd'
-import type { AgentConversation, AgentProposal, MailDraft, MailOverview, MailSummary } from '../../../../shared/models'
+import type { AgentConversation, AgentProposal, AgentStep, MailDraft, MailOverview, MailSummary } from '../../../../shared/models'
 import { Markdown } from '../../markdown'
 
 const RadarChart = React.lazy(async () => ({ default: (await import('@ant-design/plots')).Radar }))
 
-export function AgentView({ conversations, conversationId, activeConversation, busy, status, proposal,
+function StepList({ steps }: { steps: AgentStep[] }): React.JSX.Element {
+  return <div className="agent-steps">
+    {steps.map((step) => <div key={step.id} className={`agent-step is-${step.status}`}>
+      <span className="agent-step-dot" aria-hidden="true" />
+      <div className="agent-step-body">
+        <span className="agent-step-label">{step.label}</span>
+        <span className="agent-step-detail">{step.summary || step.detail}</span>
+      </div>
+    </div>)}
+  </div>
+}
+
+export function AgentView({ conversations, conversationId, activeConversation, busy, status, steps, proposal,
   prompt, overview, overviewLoading, overviewError, dark, accountCount, messagesRef,
   onClear, onSelectConversation, onLoadOverview, onOpenSource, onOpenDraft, onConfirm, onPrompt, onRun, onCancel, onOpenLink }: {
   conversations: AgentConversation[]; conversationId: string; activeConversation?: AgentConversation
-  busy: boolean; status: string; proposal: AgentProposal | null; prompt: string
+  busy: boolean; status: string; steps?: AgentStep[]; proposal: AgentProposal | null; prompt: string
   overview: MailOverview | null; overviewLoading: boolean; overviewError: string; dark: boolean
   accountCount: number; messagesRef: React.RefObject<HTMLDivElement | null>
   onClear: () => void; onSelectConversation: (id: string) => void; onLoadOverview: (force?: boolean) => void
@@ -102,6 +114,10 @@ export function AgentView({ conversations, conversationId, activeConversation, b
           {message.scope && <div className="agent-scope">检索范围：{message.scope}</div>}
           {message.truncated && <div className="agent-limit">结果较多，仅分析了最近的部分邮件。请缩小检索条件。</div>}
           {message.warnings?.map((warning, index) => <div key={index} className="agent-warning">{warning}</div>)}
+          {!!message.steps?.length && <details className="agent-steps-log">
+            <summary>执行过程 · {message.steps.length} 步</summary>
+            <StepList steps={message.steps} />
+          </details>}
           {!!message.sources?.length && <div className="agent-sources">
             {message.sources.map((source, index) => <button key={`${source.accountId}-${source.folder}-${source.uid}-${index}`}
               onClick={() => onOpenSource(source)}>[{source.citationNumber || index + 1}] 查看原文：{source.subject} · {source.from}</button>)}
@@ -114,6 +130,10 @@ export function AgentView({ conversations, conversationId, activeConversation, b
             {result.error ? `（${result.error}）` : ''}
           </div>)}
         </div>)}
+        {busy && !!steps?.length && <div className="agent-live">
+          <div className="agent-live-head">执行过程</div>
+          <StepList steps={steps} />
+        </div>}
         {status && <div className="agent-progress">{busy && <Spin size="small" />}{status}</div>}
         {proposal && <div className="agent-proposal">
           <strong>待确认的整理操作</strong>

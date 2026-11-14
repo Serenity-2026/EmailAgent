@@ -2,7 +2,7 @@
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentConversation } from '../../../../shared/models'
+import type { AgentConversation, AgentStep } from '../../../../shared/models'
 import { AgentView } from './agent-view'
 
 describe('Agent cancellation controls', () => {
@@ -93,6 +93,32 @@ describe('Agent cancellation controls', () => {
     expect(container.querySelector('.agent-overview')?.className).toContain('is-collapsed')
     await act(async () => button('展开')?.click())
     expect(container.textContent).toContain('126')
+    await act(async () => root.unmount())
+  })
+
+  it('shows live tool steps and keeps the finished trace on the answer', async () => {
+    const steps: AgentStep[] = [
+      { id: 's1', tool: 'search_mail', label: '检索邮件', detail: '在 1 个账户中检索', status: 'done', summary: '命中 3 封', at: new Date().toISOString() },
+      { id: 's2', tool: 'read_mail', label: '读取邮件', detail: '读取 2 封', status: 'running', at: new Date().toISOString() }
+    ]
+    const conversation: AgentConversation = {
+      id: 'c1', updatedAt: new Date().toISOString(), messages: [
+        { id: 'm1', role: 'assistant', createdAt: new Date().toISOString(), content: '完成', steps }
+      ]
+    }
+    const root = createRoot(container)
+    await act(async () => root.render(<AgentView conversations={[conversation]} conversationId="c1"
+      activeConversation={conversation} busy status="正在读取邮件" steps={steps} proposal={null} prompt=""
+      overview={null} overviewLoading={false} overviewError="" dark={false} accountCount={1}
+      messagesRef={{ current: null }} onClear={() => undefined} onSelectConversation={() => undefined}
+      onLoadOverview={() => undefined} onOpenSource={() => undefined} onOpenDraft={() => undefined}
+      onConfirm={async () => undefined} onPrompt={() => undefined} onRun={() => undefined} onCancel={() => undefined} />))
+    const live = container.querySelector('.agent-live')
+    expect(live?.textContent).toContain('检索邮件')
+    expect(live?.querySelectorAll('.agent-step.is-done')).toHaveLength(1)
+    expect(live?.querySelectorAll('.agent-step.is-running')).toHaveLength(1)
+    const log = container.querySelector('.agent-steps-log')
+    expect(log?.querySelector('summary')?.textContent).toContain('2 步')
     await act(async () => root.unmount())
   })
 })

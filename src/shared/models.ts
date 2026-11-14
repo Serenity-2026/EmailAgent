@@ -205,6 +205,16 @@ export interface AgentActionResult extends AgentAction {
   error?: string
 }
 
+export interface AgentStep {
+  id: string
+  tool: string
+  label: string
+  detail: string
+  status: 'running' | 'done' | 'failed'
+  summary?: string
+  at: string
+}
+
 export interface AgentMessage {
   id: string
   role: 'user' | 'assistant'
@@ -212,6 +222,7 @@ export interface AgentMessage {
   createdAt: string
   sources?: AgentMailRef[]
   draft?: MailDraft
+  steps?: AgentStep[]
   actionResults?: AgentActionResult[]
   scope?: string
   truncated?: boolean
@@ -245,8 +256,9 @@ export interface AgentConfirmResult {
 
 export interface AgentProgress {
   jobId: string
-  stage: 'planning' | 'searching' | 'reading' | 'answering' | 'completed' | 'cancelled' | 'failed'
+  stage: 'planning' | 'searching' | 'reading' | 'answering' | 'tool' | 'completed' | 'cancelled' | 'failed'
   detail: string
+  step?: AgentStep
 }
 
 export interface AgentCancelResult {

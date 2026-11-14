@@ -91,7 +91,7 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     digestLoading, setDigestLoading } = useDigestState()
   const { agentConversations, setAgentConversations, agentConversationId, setAgentConversationId,
     agentPrompt, setAgentPrompt, agentBusy, setAgentBusy, agentJobId, setAgentJobId, agentJobIdRef,
-    agentStatus, setAgentStatus,
+    agentStatus, setAgentStatus, agentSteps, setAgentSteps,
     agentProposal, setAgentProposal, overview, setOverview, overviewLoading, setOverviewLoading,
     overviewError, setOverviewError, agentMessagesRef, agentScrollState, overviewShown } = useAgentState()
   const composeDirty = composeOpen && hasDraftContent(draft) && draftKey(draft) !== draftSnapshot
@@ -120,7 +120,17 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
         : `${failure.message}；今日自动重试次数已用完`)
     })
     const unsubscribeAgent = api.onAgentProgress((progress) => {
-      if (!agentJobIdRef.current || progress.jobId === agentJobIdRef.current) setAgentStatus(progress.detail)
+      if (agentJobIdRef.current && progress.jobId !== agentJobIdRef.current) return
+      setAgentStatus(progress.detail)
+      if (!progress.step) return
+      const step = progress.step
+      setAgentSteps((current) => {
+        const index = current.findIndex((item) => item.id === step.id)
+        if (index < 0) return [...current, step]
+        const next = [...current]
+        next[index] = step
+        return next
+      })
     })
     const unsubscribeError = api.onAppError((message) => setError(message))
     return () => { unsubscribe(); unsubscribeDigestFailure(); unsubscribeAgent(); unsubscribeError() }
@@ -915,6 +925,7 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
     setAgentJobId(jobId)
     agentJobIdRef.current = jobId
     setAgentStatus('正在理解任务')
+    setAgentSteps([])
     setAgentProposal(null)
     setError('')
     try {
@@ -935,6 +946,7 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       if (epoch === sessionEpoch.current) {
         setAgentBusy(false)
         setAgentJobId('')
+        setAgentSteps([])
         if (agentJobIdRef.current === jobId) agentJobIdRef.current = ''
       }
     }
@@ -1115,7 +1127,8 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
       {error && <div className="error-wrap"><Alert type="error" message={error} closable onClose={() => setError('')} /></div>}
 
       {view === 'agent' ? <AgentView conversations={agentConversations} conversationId={agentConversationId}
-        activeConversation={activeConversation} busy={agentBusy} status={agentStatus} proposal={agentProposal}
+        activeConversation={activeConversation} busy={agentBusy} status={agentStatus} steps={agentSteps}
+        proposal={agentProposal}
         prompt={agentPrompt} overview={overview} overviewLoading={overviewLoading} overviewError={overviewError}
         dark={dark} accountCount={accounts.length} messagesRef={agentMessagesRef}
         onClear={clearAgentHistory} onSelectConversation={(id) => { setAgentConversationId(id); setAgentProposal(null) }}
