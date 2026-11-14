@@ -52,6 +52,13 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
   themeMode: ThemeMode; setThemeMode: (mode: ThemeMode) => void; dark: boolean
 }): React.JSX.Element {
   const api = window.emailAgent
+  const [fullscreen, setFullscreen] = React.useState(false)
+  React.useEffect(() => {
+    let alive = true
+    api.isFullscreen().then((value) => { if (alive) setFullscreen(value) }).catch(() => undefined)
+    const off = api.onFullscreenChange((value) => setFullscreen(value))
+    return () => { alive = false; off() }
+  }, [api])
   const { error, setError, activeUser, setActiveUser, loginName, setLoginName, loginPassword, setLoginPassword,
     loginBusy, setLoginBusy, bootstrapRequired, setBootstrapRequired, bootstrapConfirm, setBootstrapConfirm,
     bootstrapBusy, setBootstrapBusy, demoMode, setDemoMode,
@@ -1062,7 +1069,7 @@ export function EmailApp({ themeMode, setThemeMode, dark }: {
   if (!activeUser) return <LoginView error={error} username={loginName} password={loginPassword} busy={loginBusy}
     demoMode={demoMode} onUsername={setLoginName} onPassword={setLoginPassword} onLogin={() => void login()} />
 
-  return <div className="app-shell">
+  return <div className={`app-shell${fullscreen ? ' is-fullscreen' : ''}`}>
     <aside className="sidebar">
       <div className="brand"><Icon name="mail" size={19} /><span className="brand-word">Email<span>Agent</span></span></div>
       <button className={`nav-item ${view === 'digest' ? 'active' : ''}`}

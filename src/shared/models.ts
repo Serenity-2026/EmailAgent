@@ -284,6 +284,8 @@ export interface DesktopApi {
   listAiModels(baseUrl: string, apiKey: string): Promise<string[]>
   saveAiSettings(input: AiSettingsInput): Promise<void>
   clearAiActivity(): Promise<void>
+  isFullscreen(): Promise<boolean>
+  onFullscreenChange(listener: (fullscreen: boolean) => void): () => void
   testAiConnection(): Promise<void>
   generateDraft(instruction: string, accountId: string): Promise<MailDraft>
   generateDigest(accountIds: string[]): Promise<DigestHistoryItem>

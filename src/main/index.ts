@@ -35,6 +35,8 @@ function createWindow(): void {
   })
   window.webContents.on('will-navigate', (event) => event.preventDefault())
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.on('enter-full-screen', () => window?.webContents.send('window:fullscreen', true))
+  window.on('leave-full-screen', () => window?.webContents.send('window:fullscreen', false))
   window.on('close', (event) => {
     if (!composeDirty || forceWindowClose) return
     event.preventDefault()
@@ -106,6 +108,7 @@ function registerIpc(): void {
     if (url.protocol !== 'https:' || !url.hostname || url.username || url.password) throw new Error('仅支持打开 HTTPS 链接')
     await shell.openExternal(url.toString())
   })
+  ipcMain.handle('window:fullscreen-state', () => window?.isFullScreen() ?? false)
   ipcMain.handle('app:compose-dirty', (event, value: boolean) => {
     if (event.senderFrame !== window?.webContents.mainFrame || typeof value !== 'boolean') throw new Error('草稿状态无效')
     composeDirty = value

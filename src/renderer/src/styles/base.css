@@ -55,6 +55,9 @@ button { color: inherit; }
 .account-avatar { display: grid; flex: none; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: var(--ink); color: var(--paper); font-family: var(--font-serif); font-size: 12px; }
 
 .workspace { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; background: var(--paper); }
+.app-shell.is-fullscreen .sidebar { padding-top: 52px; }
+.app-shell.is-fullscreen .topbar { min-height: 86px; padding-top: 28px; }
+
 .topbar { flex: none; min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 28px; background: var(--paper); border-bottom: 1px solid var(--rule); }
 .topbar h1 { margin: 0; color: var(--ink); font-family: var(--font-serif); font-size: 19px; font-weight: 600; letter-spacing: -.1px; }
 .topbar p { margin: 3px 0 0; color: var(--faint); font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .02em; }
