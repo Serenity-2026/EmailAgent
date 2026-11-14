@@ -144,9 +144,18 @@ describe('Agent tool loop', () => {
     vi.mocked(complete).mockReset()
     vi.mocked(complete).mockResolvedValue(JSON.stringify({ action: 'search_mail', args: {} }))
     vi.mocked(searchAgentMail).mockResolvedValue({ ...emptySearch })
+    const exhausted = await runAgentTask(settings, '一直找', [account], undefined, () => undefined, () => undefined,
+      new AbortController().signal)
+    expect(exhausted.answer).toContain('没有找到匹配的邮件')
+    expect(exhausted.steps.length).toBe(8)
+    expect(searchAgentMail).toHaveBeenCalledTimes(1)
+
+    vi.mocked(complete).mockReset()
+    vi.mocked(searchAgentMail).mockClear()
+    vi.mocked(complete).mockResolvedValue(JSON.stringify({ action: 'search_mail', args: {} }))
+    vi.mocked(searchAgentMail).mockResolvedValue({ ...emptySearch, matches: [mail(1)], counts: { inbox: 1, sent: 0 } })
     await expect(runAgentTask(settings, '一直找', [account], undefined, () => undefined, () => undefined,
       new AbortController().signal)).rejects.toThrow('步骤过多')
-    expect(searchAgentMail).toHaveBeenCalledTimes(1)
   })
 
   it('stops after a logout check before searching mail', async () => {
